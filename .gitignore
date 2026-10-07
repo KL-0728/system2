@@ -1,0 +1,26 @@
+# Local secrets and environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+# Local databases, backups and generated artifacts
+instance/
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+*.bak
+logs/
+*.log
+# Editor and operating system files
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
