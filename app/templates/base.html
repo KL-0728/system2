@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}統家便利店{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}"></head>
+<body><header><a href="/">統家便利店</a> · 補貨協作系統</header>
+{% if business_time %}<aside role="status">示範時間：{{ business_time.strftime('%Y-%m-%d %H:%M:%S %Z') }} · 合成資料／示範帳號，請勿共用正式帳號</aside>{% endif %}
+{% if module_dev %}<aside class="warning">模組開發模式 {{ module_dev }} · 使用測試供應者；非真實跨模組整合。來源見下方模組入口。</aside>{% endif %}
+<main>{% block content %}{% endblock %}</main></body></html>

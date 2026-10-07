@@ -1,0 +1,29 @@
+name: foundation
+on: [push, pull_request]
+jobs:
+  mysql-tests:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: system2_ci_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pci-only-password"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      APP_ENV: test
+      TEST_DATABASE_URL: mysql+pymysql://root:ci-only-password@127.0.0.1:3306/system2_ci_test?charset=utf8mb4
+      SECRET_KEY: ci-synthetic-secret-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m flask --app wsgi db upgrade
+      - run: python -m pytest
+      - run: python -m flask --app wsgi db check

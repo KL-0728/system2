@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block content %}
+<h1>登入</h1><p>請使用自己的示範帳號。密碼由本機種子設定提供。</p>
+<form method="post" action="/api/auth/login">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label for="username">帳號</label><input id="username" name="username" autocomplete="username" required>
+<label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+<button type="submit">登入</button></form>{% endblock %}
