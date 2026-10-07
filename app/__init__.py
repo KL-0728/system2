@@ -83,4 +83,11 @@ def create_app(overrides=None):
 
     from app.cli import register_cli
     register_cli(app)
+    from app.providers import initialize_providers, MODULES
+    from importlib import import_module
+    initialize_providers(app)
+    for module in MODULES:
+        app.register_blueprint(import_module(f'app.modules.{module}.routes').bp)
+    from app.routes.module_dev import bp as dev_bp
+    app.register_blueprint(dev_bp)
     return app

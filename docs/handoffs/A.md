@@ -39,3 +39,16 @@ A03 未發布前，B／C／D 請勿開始模組製作。目前沒有產品驗收
 - migration head：2ce34638ca9a。CI 定義已建立，遠端 Actions 結果尚未讀取。
 - 人工實測：尚未執行；步驟見 README「A02 實測」。管理畫面留 A04；完整 V20／V44 與併發驗收留 A06，不以基礎單元測試宣稱通過。
 - 現在：AI 繼續 A03，A 暫無需操作。
+
+## A03 候選版製作／自測
+
+- 開發前 fetch／pull --ff-only 成功；main 基準 0b3e356，目錄乾淨。
+- 36張共用表、FK／唯一約束及 nullable 輸出、追加式稽核／異動／快照守衛；全套 DTO／Protocol、服務注入、三個成員路由／installer。
+- 可失敗庫存替身、未結風險／完整性／run替身、C持久化run工廠與D正式表訂單工廠；僅test／明示模組開發模式。D測試訂單 fixture_only=True，未將 C 送單替換成假成功。
+- 新建 .venv-clean 安裝鎖定依賴，空test DB從零upgrade成功；migration 884e7a53a8c8，db check無差異；36項MySQL自測通過。
+- 獨立 B／C／D check_module 各通過；seed-module C／D後有可用實體FK資料。示範基礎：兩店、10品項、各14日歷史、現貨20；受控run飲料建議30。
+- 真實MySQL兩連線鎖測試、受控寫入回滾／冪等、null、重要風險、模式拒絕通過。登入限流實測5次401、第6次429。
+- 重建發現 MySQL downgrade 的 FK索引限制；未改已發布 A02 revision，改以驗空test schema明確重建後驗完整升級鏈。資料回退不在基準保證。
+- 修正 PowerShell 管線造成 acceptance.md 中文損壞，改由Unicode安全寫入；未改產品規格。
+- 人工瀏覽器／手機尚未執行，完整步驟見 README；V表維持尚未驗收。
+- 下一步：最終受影響自測、核對差異、main提交／推送、確認CI與保護、發布基準及標記。

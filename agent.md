@@ -42,6 +42,8 @@ agent.md是完整分工文件；根目錄AGENTS.md只提供Codex讀取入口，�
 | C | models/order.py；services/orders.py；店長訂購專用路由、templates/store/的首頁／工作台／草稿／預覽／訂單明細、補貨及確認JavaScript；tests/test_confirmation.py、test_submission.py；demo/video-script-zh.md |
 | D | models/fulfillment.py及待辦模型；services/fulfillment.py、open_orders.py、tasks.py；履約專用路由、templates/headquarters/及店長收貨／待辦模板；tests/test_fulfillment.py、test_tasks.py；履約JavaScript |
 
+A03 實際註冊入口補充：B 維護 app/modules/inventory/，C 維護 app/modules/ordering/，D 維護 app/modules/fulfillment/；各自 routes.py 的 bp 與 services.py 的 install() 已由 factory 自動載入。共用 DTO 為 app/contracts.py、注入為 app/providers.py、測試支援為 app/testing/；均由 A 維護。業務模型／服務責任仍依上表，未變更產品規格。
+
 共用檔案規則：
 
 - A負責共用版型與CSS基礎；B、C、D使用各功能獨立樣式檔，避免同時大量改app.css。

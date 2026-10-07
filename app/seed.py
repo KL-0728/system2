@@ -12,7 +12,7 @@ POLICY = dict(review_days=1, absolute_large_qty=100, deviation_floor=100,
 
 def seed_demo():
     password = os.environ.get('DEMO_PASSWORD', '')
-    if len(password) < 12:
+    if len(password) < 12 or password.startswith('REPLACE_'):
         raise ValueError('DEMO_PASSWORD 至少12字元，僅放本機 .env')
     if db.session.execute(db.select(Store.id).limit(1)).first():
         raise ValueError('資料庫已有門市，拒絕覆蓋；請使用安全 demo 重設')
@@ -45,3 +45,5 @@ def seed_demo():
                 cutoff_at=utc_naive(baseline + timedelta(hours=1)),
                 arrival_at=utc_naive(baseline + timedelta(days=days))))
     db.session.flush()
+    from app.testing.seed import seed_inventory_sales
+    seed_inventory_sales()

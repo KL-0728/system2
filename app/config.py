@@ -32,7 +32,7 @@ def settings(overrides=None):
             if (parsed.host, parsed.port or 3306, parsed.database) == (other.host, other.port or 3306, other.database):
                 raise ValueError('測試與 demo DB 不得相同')
     secret = overrides.get('SECRET_KEY') or os.getenv('SECRET_KEY')
-    if not secret or len(secret) < 32:
+    if not secret or len(secret) < 32 or secret.startswith('REPLACE_'):
         raise ValueError('SECRET_KEY 至少32字元，請自行產生並放於 .env')
     module = overrides.get('MODULE_DEV', os.getenv('MODULE_DEV', ''))
     if module not in ('', 'B', 'C', 'D') or (module and env == 'production'):

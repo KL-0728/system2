@@ -5,6 +5,17 @@ from app.config import validate_database
 
 
 def register_cli(app):
+    @app.cli.command('seed-module')
+    @click.argument('module', type=click.Choice(['B', 'C', 'D']))
+    def seed_module(module):
+        if current_app.config['APP_ENV'] != 'demo' or current_app.config['MODULE_DEV'] != module:
+            raise click.ClickException('請明確啟用對應 MODULE_DEV，僅限本機 demo')
+        validate_database(str(db.engine.url), 'demo')
+        from app.services.version import transaction
+        from app.testing.seed import seed_module_data
+        with transaction():
+            seed_module_data(module)
+        click.echo(f'{module} 模組開發資料已備妥；測試工廠／替身不是正式功能。')
     @app.cli.command('seed-demo')
     def seed():
         if current_app.config['APP_ENV'] != 'demo':
@@ -31,8 +42,15 @@ def register_cli(app):
         # Delete rows in FK reverse order; preserve schema and alembic_version.
         from app.services.version import transaction
         with transaction():
-            for table in reversed(db.metadata.sorted_tables):
-                db.session.execute(table.delete())
-            from app.seed import seed_demo
-            seed_demo()
+            # Schema includes circular historical references. Disable checks only on
+            # this validated local demo connection, restore before returning it.
+            connection = db.session.connection()
+            connection.exec_driver_sql('SET FOREIGN_KEY_CHECKS=0')
+            try:
+                for table in reversed(db.metadata.sorted_tables):
+                    db.session.execute(table.delete())
+                from app.seed import seed_demo
+                seed_demo()
+            finally:
+                connection.exec_driver_sql('SET FOREIGN_KEY_CHECKS=1')
         click.echo('僅此本機 demo 資料已重設。')

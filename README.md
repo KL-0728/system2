@@ -60,3 +60,72 @@ Remove-Item Env:APP_ENV
 本次 A01–A03 經 A 明確授權直接推 main、不開 PR。B／C／D 仍依 agent.md：A03 發布後從 main 各開 feat/b-module、feat/c-module、feat/d-module，沿01→05連續製作；人工實測後交 PR，僅 A 合併。未發布前不可宣稱可開工。
 
 發布狀態見 docs/parallel-ready.md（A03 建立後），介面見 docs/contracts.md，任務見 docs/tasks.md，驗收見 docs/acceptance.md。
+
+## A03：B／C／D 各自開工
+
+首次 clone 後先讀 docs/parallel-ready.md，核對發布基準與合約 v1。若工作目錄乾淨，依序執行（B 範例，C／D 換自己的分支）：
+
+```powershell
+git status --short --branch
+git remote -v
+git fetch origin
+git switch main
+git pull --ff-only origin main
+git switch -c feat/b-module
+```
+
+各人按前述環境段落建立自己的 demo／test DB、.env、安裝、migration、seed-demo；只第一次 seed-demo，已有資料會拒絕覆蓋。示範資料為兩店、10品項、各14日歷史銷售；現貨20、不可售0，已核對盤點基準為2026-10-08 21:00。歷史資料不再次扣庫存。
+
+| 成員 | 分支 | MODULE_DEV | 登入身份 | 基礎檢查 URL | 外部供應者替身 |
+| --- | --- | --- | --- | --- | --- |
+| B | feat/b-module | B | manager1 | http://127.0.0.1:5000/modules/b/ | D 未結來源 |
+| C | feat/c-module | C | manager1 | http://127.0.0.1:5000/modules/c/ | B run／完整性、D 未結／履約 |
+| D | feat/d-module | D | operator；收貨用 manager1 | http://127.0.0.1:5000/modules/d/ | B 庫存寫入、C 訂單工廠 |
+
+以 C 為例，B／D 替換兩處字母：
+
+```powershell
+$env:MODULE_DEV='C'
+.\.venv\Scripts\python -m flask --app wsgi seed-module C
+.\.venv\Scripts\python -m flask --app wsgi run --host 127.0.0.1 --port 5000
+```
+
+停止伺服器後可執行基礎檢查及測試：
+
+```powershell
+.\.venv\Scripts\python scripts/check_module.py C
+$env:APP_ENV='test'
+Remove-Item Env:MODULE_DEV -ErrorAction SilentlyContinue
+.\.venv\Scripts\python -m flask --app wsgi db upgrade
+.\.venv\Scripts\python -m pytest tests/test_contracts.py -q
+.\.venv\Scripts\python -m pytest -q
+Remove-Item Env:APP_ENV
+```
+
+check_module 只用 Flask HTTP 測試客戶端，並非瀏覽器人工實測。C 的 seed-module 建立持久化受控 run／run_items，頁面列實際 ID，可供真實 C 草稿外鍵使用；D 建立明示 fixture_only 的測試訂單；兩者不代表 B 計算或 C 正式送單成功。B 自行實作真實庫存／計算，C 自行實作確認／送單，D 自行實作履約，另一人尚未合併不影響自己繼續01→05。
+
+人工核對：登入後進入自己模組 URL → 顯示「非真實跨模組整合」及來源；C 飲料受控建議為30件、mu=20，direct 案例則為 null；D 顯示 FIXTURE 訂單原訂量30。錯誤路徑：開未啟用模組 URL →404；一般 demo 移除 MODULE_DEV 後替身入口404，未註冊服務503；禁止將開發替身當正式服務。API／DTO 正常與例外案例的可執行檢查見 tests/test_contracts.py。
+
+業務實作放既定 models／services，自己模組的 routes.py 及 services.py.install() 已自動註冊。完整介面、欄位及鎖順序見 docs/contracts.md、docs/schema.md；更新自己 docs/handoffs/B.md、C.md、D.md。不要同改共用 app factory 或建立另一套訂單／庫存表。
+
+## 空 test DB 重建檢查（選用）
+
+只在自己的、確認沒有資料的獨立 test DB 使用：
+
+```powershell
+.\.venv\Scripts\python scripts/rebuild_empty_test.py --confirm-empty-test
+```
+
+此命令驗證本機 test DB 與所有資料表空白（除 alembic_version），再移除空 schema、從零 upgrade 並 check／heads；有資料立即拒絕。一般 pytest 不清 schema、不 drop_all，只回滾測試交易。基準採向前 migration；舊版自動產生的 downgrade 會遇到 MySQL 外鍵索引限制，不作資料回退保證，也不修改已發布 migration。資料恢復使用備份，新變更使用相容 revision。
+
+## 本機 A 的隔離 MySQL 實例
+
+本次自測另啟動 MySQL 9.6.0，僅綁127.0.0.1:3307，資料在忽略的 instance/mysql-data、程序識別在 instance/mysql.pid；與既有 MySQL96／3306服務分開。A 的 .env 已設定此實例及兩個獨立 DB，憑證未提交；B／C／D 應使用自己電腦的 MySQL 與各自 .env，不複製 A 的資料目錄。
+
+A 重開電腦後需要啟動這個本機實例時：
+
+```powershell
+Start-Process -FilePath 'C:\Program Files\MySQL\MySQL Server 9.6\bin\mysqld.exe' -ArgumentList '--no-defaults','--basedir="C:/Program Files/MySQL/MySQL Server 9.6"','--datadir="C:/Users/user/Desktop/system2/instance/mysql-data"','--port=3307','--bind-address=127.0.0.1','--mysqlx=OFF','--log-error="C:/Users/user/Desktop/system2/instance/mysql.log"' -WindowStyle Hidden
+```
+
+若3307已在執行，不重複啟動。此環境為本機開發，不是部署。
