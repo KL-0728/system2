@@ -1,6 +1,10 @@
 # A03 獨立開工基礎發布紀錄
 
-狀態：候選版，尚未宣布組員開工。程式與本機證據已備妥，待本次 A03 main 提交與 GitHub CI 核對後更新為已發布。
+狀態：A03 基礎已發布，B／C／D 可獨立開工。發布流程在本紀錄推上 main 並核對 CI 後建立 a03-parallel-v1 標記；標記解析到包含本紀錄的實際發布提交。
+
+- 已測程式基準（實際 main 提交）：ef653c73e2b44cfe4a5988a4cc81723e9406e8a0。
+- 發布版本：a03-parallel-v1；首次 clone 同步 main，確認 main 包含此標記。標記的精確 SHA 可用 `git rev-parse a03-parallel-v1^{commit}` 取得；公告提交另含本紀錄、文件空白修正及測試環境隔離設定。
+- A03 GitHub MySQL 8.4 CI：migration／pytest／db check 步驟全部 success，[執行紀錄](https://github.com/KL-0728/system2/actions/runs/37666023805)。最終發布提交的 CI 可於同一儲存庫 Actions 查看。
 
 - 合約：v1，app/contracts.py 與 docs/contracts.md；完整欄位見 docs/schema.md。
 - 共用 schema：36 張 ORM 表；migration 單一 head 884e7a53a8c8（前置 2ce34638ca9a）。
@@ -16,7 +20,7 @@
 | A02 MySQL 基礎測試 | 6 passed；登入／CSRF／跨店／角色／時鐘／版本／Decimal |
 | 全新 .venv-clean 依 requirements 安裝 | 成功 |
 | 空 test schema 從零升級兩個 revision | 成功，單一 head；db check 無差異 |
-| A03 共用／合約測試 | 36 passed（含新持久化 C run 工廠；最終提交前再驗受影響項目） |
+| A03 共用／合約測試 | 36 passed；最後快照守衛重驗2項通過；繼承 MODULE_DEV=C 的隔離測試重驗28項通過 |
 | B 獨立 HTTP 檢查 | health／登入／modules/b 200；非啟用模組404；替身來源可見 |
 | C 獨立 HTTP 檢查 | 同上；持久化 run／run_items 可用於 C 真實草稿 FK |
 | D 獨立 HTTP 檢查 | 同上；fixture_only 正式表工廠訂單；原訂30件 |
@@ -43,4 +47,7 @@
 - 一般 demo／production 不自動注入替身；缺服務503。開發替身及工廠不能當正式計算、送單或庫存已入帳的證據。
 - A04 管理畫面、A05 真實整合、A06 全部 V／MySQL 業務併發／效能／手機／三人易用性、A07 影片未完成。
 - 基準 migration 供向前升級；舊自動 downgrade 有 MySQL 外鍵索引限制，不作回退保證，保留已發布 revision。空 test 重建工具明確驗空才操作，不能當一般資料清理。
-- main 分支保護：發布前待設定及讀回確認；不將文件宣稱為平台已設定。
+- main 分支保護已透過 GitHub API 設定並讀回：PR至少1人審核、過期審核失效、mysql-tests必要檢查且需最新main、對話解決、禁止強推／刪除。
+- 管理者不強制受保護規則（配合本次 A 直接main授權）；使用者個人儲存庫未設定組織級指定推送者限制。平台不保證只有A能合併，仍依團隊規則由A審核合併，B／C／D不可直接推main。
+
+發布宣布：共用基礎 A03 已完成，程式基準 ef653c7、合約 v1，正式發布標記 a03-parallel-v1。大家可以開始，各自在自己的模組分支依01→05完成、自測、人工實測後開PR；不必等其他人或A逐步合併。

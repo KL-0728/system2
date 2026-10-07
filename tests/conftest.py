@@ -16,7 +16,8 @@ def app():
         pytest.fail('TEST_DATABASE_URL 未設定，拒絕測試／清理')
     validate_database(url, 'test')
     application = create_app({'APP_ENV': 'test', 'SQLALCHEMY_DATABASE_URI': url,
-        'SECRET_KEY': 'test-only-secret-key-at-least-32-characters', 'RATELIMIT_ENABLED': False})
+        'SECRET_KEY': 'test-only-secret-key-at-least-32-characters', 'RATELIMIT_ENABLED': False,
+        'MODULE_DEV': ''})
     with application.app_context():
         # DDL is managed by migrations. Tests use an isolated outer transaction.
         connection = db.engine.connect()

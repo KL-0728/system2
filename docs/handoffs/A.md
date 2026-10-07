@@ -52,3 +52,12 @@ A03 未發布前，B／C／D 請勿開始模組製作。目前沒有產品驗收
 - 修正 PowerShell 管線造成 acceptance.md 中文損壞，改由Unicode安全寫入；未改產品規格。
 - 人工瀏覽器／手機尚未執行，完整步驟見 README；V表維持尚未驗收。
 - 下一步：最終受影響自測、核對差異、main提交／推送、確認CI與保護、發布基準及標記。
+
+## A01–A03 發布結果
+
+- A01 1c56c7f、A02 0b3e356、A03程式基準 ef653c73e2b44cfe4a5988a4cc81723e9406e8a0，均已實際推main。本次不開PR、不部署。
+- A02 GitHub CI success：https://github.com/KL-0728/system2/actions/runs/37663516757 。A03 MySQL8.4 migration／pytest／schema check 全部成功：https://github.com/KL-0728/system2/actions/runs/37666023805 。發布公告提交另追加MODULE_DEV測試隔離（28項重驗通過）及文件整理，發布標記a03-parallel-v1於最後CI核對後建立。
+- 最後原訂量／確認快照守衛重驗：2 passed。main保護設定並讀回：PR1人審核、stale review失效、mysql-tests strict必要檢查、對話解決、禁止force push與刪除；管理者豁免，僅A合併仍為團隊規則。
+- 本機 .env／instance／兩套venv均未追蹤，工作資料保留。獨立MySQL3307仍在執行，A可按README啟動Flask實測；既有MySQL96未更動。先前詢問的既有DB連線不再需要。
+- 完整發布狀態／標記解析方式見parallel-ready。各成員的下一步／實際命令／人工預期結果見README與各自交接檔，V表未誤標產品通過。
+- 現在：請A依README核對登入、跨店與三模組基礎頁，將發布指引交B／C／D；三人可各自開始01→05。A04–A07不在本次範圍。

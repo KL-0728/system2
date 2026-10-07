@@ -792,4 +792,3 @@ Constraints:
 - ForeignKeyConstraint fk_replacement_authorizations_variance_id_receipt_variances: variance_id
 - PrimaryKeyConstraint pk_replacement_authorizations: id
 - UniqueConstraint uq_replacement_authorizations_variance_id: variance_id, request_key
-
