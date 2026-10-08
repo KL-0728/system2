@@ -12,8 +12,8 @@ POLICY = dict(review_days=1, absolute_large_qty=100, deviation_floor=100,
 
 def seed_demo():
     password = os.environ.get('DEMO_PASSWORD', '')
-    if len(password) < 12 or password.startswith('REPLACE_'):
-        raise ValueError('DEMO_PASSWORD 至少12字元，僅放本機 .env')
+    if len(password) < 8 or password.startswith('REPLACE_'):
+        raise ValueError('DEMO_PASSWORD 至少8字元，僅供本機示範並放於 .env')
     if db.session.execute(db.select(Store.id).limit(1)).first():
         raise ValueError('資料庫已有門市，拒絕覆蓋；請使用安全 demo 重設')
     baseline = datetime(2026, 10, 8, 13, tzinfo=timezone.utc)

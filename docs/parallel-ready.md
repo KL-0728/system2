@@ -1,5 +1,42 @@
 # A03 獨立開工基礎發布紀錄
 
+## 最新修正版基準：a03-parallel-v2
+
+2026-10-08：在v1（e39f1dfbe31c84e894cd2a97999efb5dea9d9f2f）上補齊MySQL重新啟動、唯讀環境檢查、人工核對與每次結束回報規則，並支援至少8字元的本機共用示範密碼。A本次明確授權直接提交推送main，不開PR；B／C／D仍使用模組分支及PR。
+
+- 合約v1、36張ORM表及migration head 884e7a53a8c8不變；沒有新增migration或重設資料。
+- 發布前本機檢查：demo／test連線及migration皆PASS；pytest為36 passed in 11.61s；四個示範帳號HTTP登入皆200。A回報登入成功及完成跨店人工核對，但對話未逐筆提供最終跨店回應，不宣稱完整V驗收完成。
+- main推送後核對該提交的GitHub mysql-tests成功，才建立a03-parallel-v2標記。精確發布SHA以下列指令查詢；v1保留，不移動舊標記。
+
+```powershell
+git fetch origin --tags
+git rev-parse 'a03-parallel-v2^{commit}'
+git merge-base --is-ancestor a03-parallel-v2 origin/main
+```
+
+最後一行預期結束碼0；找不到v2標記時，先確認A的發布回報。
+
+### 組員取得修正版與開工
+
+尚未開始模組且工作目錄乾淨者執行以下指令；C／D將最後一行換成feat/c-module／feat/d-module。有未提交修改或已有模組分支者，先依agent.md第5.1節保留工作並在自己的分支同步，不重建或覆寫分支。
+
+```powershell
+git status --short --branch
+git fetch origin --tags
+git switch main
+git pull --ff-only origin main
+git merge-base --is-ancestor a03-parallel-v2 HEAD
+git switch -c feat/b-module
+```
+
+首次安裝依README建立自己的.env、demo／test DB及migration；已安裝者依「每次重新開工」啟動自己設定的MySQL，再跑scripts/check_environment.py，預期兩行PASS，接著pytest -q，基礎版預期36 passed。A專用start_a_mysql.ps1不適用其他人的新checkout。
+
+每人可在自己的.env設定團隊約定的合成示範密碼；此檔不在GitHub，pull不會帶入A的密碼或資料。新建帳號依DEMO_PASSWORD建立，既有帳號不會因編輯.env自動改密碼。接著依README設定MODULE_DEV及seed-module，沿自己的01→05完成、自測與交接。
+
+組員可貼：「我是B，請依agent.md完成我的整個模組；先確認a03-parallel-v2基準，每階段自測回報並繼續。」C／D換成自己的成員代號。
+
+以下保留v1的發布與檢查紀錄，最新開工基準以本節v2為準。
+
 狀態：A03 基礎已發布，B／C／D 可獨立開工。發布流程在本紀錄推上 main 並核對 CI 後建立 a03-parallel-v1 標記；標記解析到包含本紀錄的實際發布提交。
 
 - 已測程式基準（實際 main 提交）：ef653c73e2b44cfe4a5988a4cc81723e9406e8a0。

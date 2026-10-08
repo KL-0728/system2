@@ -1,5 +1,26 @@
 # A 任務紀錄
 
+## 2026-10-08 本機啟動修正版發布
+
+- A已授權提交並直接推送main、更新發布基準與組員指引；本次不開PR。發布標記a03-parallel-v2於main提交的GitHub CI成功後建立，精確SHA由標記解析，v1保留。
+- 發布前：scripts/check_environment.py兩個DB皆PASS；pytest 36 passed in 11.61s；啟動腳本已運行時不重複啟動路徑通過。先前四個共用示範帳號HTTP登入皆200。冷啟動腳本未以停止使用中的DB重驗，保留此限制。
+- A回報登入成功與跨店檢查完成；未逐筆提供最後的跨店回應，不擴大為完整產品驗收。A04–A07及真實跨模組整合仍未完成。
+- docs/parallel-ready.md頂端更新v2基準及組員取得、環境檢查、開工指令。下方各節「未提交／未推送」為修復過程的歷史紀錄，本節及實際Git狀態優先。
+
+## 本機示範帳號共用密碼
+
+- 依A要求，四個本機示範帳號manager1／manager2／operator／admin統一使用指定的示範密碼，並同步未追蹤的.env；版控文件不記錄密碼值。保留門市、商品、訂單及其他既有資料。
+- seed-demo的示範密碼最低長度由12調整為8，使後續重建可接受指定值；README同步說明僅供本機示範共用，以及修改.env不會自動更新既有帳號。
+- 以Flask HTTP測試客戶端逐一登入四個帳號，均為200且/api/auth/me身份正確。修改仍在fix/a03-local-startup，未提交／推送。
+
+## 本機啟動修復後的核對與共同指引補強
+
+- 使用者回報：`36 passed, 1 warning in 11.57s`，先前26個DB連線錯誤已解除；尚未提供warning內文，不推定原因或宣稱無害。
+- AI本次核對：`scripts/check_environment.py`的demo／test皆PASS；`python -m pytest -q`為`36 passed in 11.68s`，本次未重現warning。未執行瀏覽器人工操作。
+- 共用指引：README補上所有成員每次重新開工的DB檢查、測試後切回demo，以及A03登入／模組頁／跨店隔離的具體人工核對步驟。agent.md第9節要求先確認實際DB連線，第9.1節明定結束回覆直接附改動、測試、實測方法與下一步，文件連結僅補充；錯誤回報保留warning內文。
+- 本次未改產品規格或業務功能。版本為e39f1df加fix/a03-local-startup分支未提交修改；尚未提交、推送或開PR，其他組員仍需取得發布後的修正才會看到新指引。A03發布標籤不變。
+- 下一步：A依README「A03 自動測試通過後的人工核對」操作並記錄結果；若仍有warning，回報warnings summary全文（遮蔽憑證）。
+
 ## 2026-10-08：A01 初始化檢查
 
 - 成員：A；本次範圍：A01 至 A03。
@@ -61,3 +82,14 @@ A03 未發布前，B／C／D 請勿開始模組製作。目前沒有產品驗收
 - 本機 .env／instance／兩套venv均未追蹤，工作資料保留。獨立MySQL3307仍在執行，A可按README啟動Flask實測；既有MySQL96未更動。先前詢問的既有DB連線不再需要。
 - 完整發布狀態／標記解析方式見parallel-ready。各成員的下一步／實際命令／人工預期結果見README與各自交接檔，V表未誤標產品通過。
 - 現在：請A依README核對登入、跨店與三模組基礎頁，將發布指引交B／C／D；三人可各自開始01→05。A04–A07不在本次範圍。
+
+## A03 本機實測失敗修復（2026-10-08）
+
+- 使用者回報：10 passed、2 warnings、26 errors。重新核對 .env，demo與test均指向127.0.0.1:3307；TCP實測ConnectionRefusedError。既有MySQL96／3306不是這份checkout使用的資料庫。
+- 同步：fetch與pull --ff-only成功，HEAD／origin/main均e39f1df，工作目錄乾淨；修復分支fix/a03-local-startup。
+- 保留原instance/mysql-data與.env，只啟動既有獨立MySQL，不初始化、不清資料、不改既有MySQL服務。
+- 修改：README把資料庫啟動／環境檢查放在pytest前；新增scripts/start_a_mysql.ps1（只啟動既有A資料目錄、隱藏視窗、等待3307可用、已啟動則不重啟）與scripts/check_environment.py（唯讀檢查demo／test連線及migration head，不輸出憑證）。產品程式／規格／已發布migration未改動。
+- 實測：兩個DB檢查PASS，head 884e7a53a8c8；pytest -q → **36 passed in 11.70s**。check_module.py B／C／D全部通過。另用未開啟的本機59999測check_environment錯誤路徑，回MySQL2003及exit1，未操作真實資料。啟動腳本的「已有3307不重啟」路徑已驗證；本次冷啟動是以README原始Start-Process參數執行成功，未為測腳本再停止使用中的資料庫。
+- 測試版本：e39f1df加上述未提交修復。本次尚未提交／推送／開PR，不移動a03-parallel-v1。
+- 使用者重測：先在自己的PowerShell執行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_a_mysql.ps1`；再執行 `.\.venv\Scripts\python scripts/check_environment.py`，兩行PASS後執行 `.\.venv\Scripts\python -m pytest -q`，預期36 passed。重開電腦後先做同樣檢查，不重新複製.env或seed-demo。
+- 人工瀏覽器／手機尚未實測。下一步請A重跑以上三步；若仍失敗，提供第一個FAIL／ERROR的錯誤文字與指令（遮蔽憑證），不只測試統計摘要。

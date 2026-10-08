@@ -14,7 +14,7 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-在 .env 填入兩個本機連線、自己產生的 SECRET_KEY 與至少12字元的 DEMO_PASSWORD。不將密碼貼到 PR／聊天，不提交 .env。
+在 .env 填入兩個本機連線、自己產生的 SECRET_KEY 與至少8字元的 DEMO_PASSWORD。DEMO_PASSWORD可供本機合成示範帳號共用，勿使用真實帳號的密碼；不將本機憑證貼到PR／聊天，不提交.env。修改此設定不會自動更新既有帳號，僅影響後續建立或重設示範資料。
 
 ```powershell
 .\.venv\Scripts\python -c "import secrets; print(secrets.token_hex(32))"
@@ -25,7 +25,27 @@ Copy-Item .env.example .env
 
 開啟 http://127.0.0.1:5000/login，使用 manager1（DEMO1）、manager2（DEMO2）、operator（統家接單）或 admin（管理者）；密碼均取自本機 DEMO_PASSWORD，僅為合成示範帳號。示範起點為 2026-10-08 21:00 Asia/Taipei，時間暫停；所有頁面持續標示示範時間。完整管理介面留 A04。
 
+## 每次重新開工（所有成員）
+
+首次安裝完成後，不必再次clone、複製.env或seed-demo。先啟動自己.env連到的MySQL服務，再執行下列唯讀檢查；確認demo與test皆PASS後才啟動應用或執行測試。
+
+```powershell
+.\.venv\Scripts\python scripts/check_environment.py
+```
+
+若提示migration落後，在對應APP_ENV下執行db upgrade後重查。測試後啟動瀏覽器實測時，明確設APP_ENV=demo，避免同一個PowerShell殘留APP_ENV=test。MODULE_DEV依自己的B／C／D模組設定。A專用3307啟動腳本僅適用A既有資料目錄，其他組員啟動自己的MySQL。
+
 ## 測試與防誤用
+
+先確認資料庫正在執行。A 的這份既有 checkout 使用獨立 MySQL **3307**，它不是 Windows 的 MySQL96／3306 服務，重開電腦後須重新啟動；不能只啟動 Flask。保留既有 .env 與資料，**不要重新複製 .env.example、初始化或重設資料庫**。
+
+```powershell
+# 僅 A 此份既有 checkout；B／C／D 啟動自己的 MySQL 服務。
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_a_mysql.ps1
+.\.venv\Scripts\python scripts/check_environment.py
+```
+
+預期：demo、test 各一行 PASS，且 migration head 為884e7a53a8c8。此檢查只讀，不清資料、不輸出密碼。若 FAIL，先解決提示的連線／認證／migration問題，再跑測試。啟動腳本只啟動既有 A 資料目錄；已啟動會直接返回，不重複建立程序。
 
 ```powershell
 $env:APP_ENV='test'
@@ -34,6 +54,8 @@ $env:APP_ENV='test'
 .\.venv\Scripts\python -m flask --app wsgi db check
 Remove-Item Env:APP_ENV
 ```
+
+若結果是 `10 passed, 26 errors` 且錯誤含 MySQL `2003`／Connection refused，代表無DB的測試通過，但需要DB的測試無法連線。請先執行上面的檢查；不要用重設資料或改成SQLite處理。`check_environment.py --database test` 可只檢查測試DB。
 
 測試只讀 TEST_DATABASE_URL；缺少設定立即失敗，不回退 demo 或 SQLite。demo／test 僅允許 localhost／127.0.0.1，DB 名稱須為 system2_*_demo／system2_*_test，測試與 demo 不得為同一 DB。測試在獨立外層交易內建立種子，結束回滾，不執行 drop_all；test DB 必須先套 migration，且不得預先放入其他人的資料。
 
@@ -46,6 +68,29 @@ Remove-Item Env:APP_ENV
 5. 正式模式禁止模組替身、debug、不安全 cookie 及停用 CSRF。尚未完成公開上線部署；登入速率限制目前採單程序記憶體，正式多程序需另設共享儲存。
 
 瀏覽器可先 GET /api/auth/csrf 取得 token，POST JSON 時以 X-CSRFToken header 傳入；登入成功會回新 token。一般 HTML 表單已帶 CSRF。所有後端操作仍須用服務端身份檢查角色與門市。
+
+## A03 自動測試通過後的人工核對
+
+使用既有示範資料，不需重設。先完成環境檢查，再於PowerShell啟動C模組基礎頁：
+
+```powershell
+$env:APP_ENV='demo'
+$env:MODULE_DEV='C'
+.\.venv\Scripts\python -m flask --app wsgi run --host 127.0.0.1 --port 5000
+```
+
+1. 一般瀏覽器開啟 http://127.0.0.1:5000/login，以manager1及本機.env的DEMO_PASSWORD登入。預期首頁顯示帳號與示範時間。
+2. 開啟 http://127.0.0.1:5000/modules/c/，預期有測試／未真實整合標示；這是基礎頁，不代表C訂購功能完成。開啟/modules/b/應為404，因本次只啟用C。
+3. 一般視窗開啟/api/auth/me，記下manager1所屬DEMO1的stores[].id。另開無痕視窗，以manager2登入並由同一API記下DEMO2的id；不要假設id固定為1／2。
+4. 回到manager1的一般視窗，開啟/api/stores/<DEMO1的id>/context應成功顯示JSON（HTTP 200）；將id換為DEMO2應為HTTP 404。可在瀏覽器開發工具的Network查看狀態碼。
+5. 完成後回PowerShell按Ctrl+C停止Flask，清除本次設定：
+
+```powershell
+Remove-Item Env:MODULE_DEV -ErrorAction SilentlyContinue
+Remove-Item Env:APP_ENV -ErrorAction SilentlyContinue
+```
+
+記錄實測版本、步驟與結果。A03只驗證共用基礎及模組隔離；真實訂購、庫存與收貨流程待模組開發及A05／A06整合驗收。
 
 ## 安全示範重設
 
@@ -63,7 +108,7 @@ Remove-Item Env:APP_ENV
 
 ## A03：B／C／D 各自開工
 
-首次 clone 後先讀 docs/parallel-ready.md，核對發布基準與合約 v1。若工作目錄乾淨，依序執行（B 範例，C／D 換自己的分支）：
+首次 clone 後先讀 docs/parallel-ready.md，核對最新發布標記a03-parallel-v2與合約v1。若工作目錄乾淨，依序執行（B 範例，C／D 換自己的分支）：
 
 ```powershell
 git status --short --branch
@@ -71,6 +116,8 @@ git remote -v
 git fetch origin
 git switch main
 git pull --ff-only origin main
+git fetch origin --tags
+git merge-base --is-ancestor a03-parallel-v2 HEAD
 git switch -c feat/b-module
 ```
 
