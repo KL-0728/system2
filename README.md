@@ -2,6 +2,8 @@
 
 產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。此版本為 A 的共用基礎，尚未完成訂購、庫存與履約業務。
 
+**組員先看[操作入口：現在要做什麼](docs/team-start.md)**：包含首次安裝、每日啟動、示範帳密、跨店檢查圖例、錯誤判讀，以及各狀態可直接貼給Codex的下一句。下文保留環境與技術細節。
+
 ## 本機環境（PowerShell，Python 3.12／MySQL 8.4 以上）
 
 每人使用獨立 checkout 與資料庫；例如 A 使用 system2_a_demo、system2_a_test，B 改為 system2_b_demo、system2_b_test。資料表採 InnoDB、utf8mb4。先由本機 DB 管理者建立空資料庫及僅限該 DB 的帳號，不共用錄影資料。
@@ -11,19 +13,24 @@ git clone https://github.com/KL-0728/system2.git
 cd system2
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 在 .env 填入兩個本機連線、自己產生的 SECRET_KEY 與至少8字元的 DEMO_PASSWORD。DEMO_PASSWORD可供本機合成示範帳號共用，勿使用真實帳號的密碼；不將本機憑證貼到PR／聊天，不提交.env。修改此設定不會自動更新既有帳號，僅影響後續建立或重設示範資料。
 
 ```powershell
 .\.venv\Scripts\python -c "import secrets; print(secrets.token_hex(32))"
+$env:APP_ENV='test'
+.\.venv\Scripts\python -m flask --app wsgi db upgrade
+$env:APP_ENV='demo'
 .\.venv\Scripts\python -m flask --app wsgi db upgrade
 .\.venv\Scripts\python -m flask --app wsgi seed-demo
 .\.venv\Scripts\python -m flask --app wsgi run --host 127.0.0.1 --port 5000
 ```
 
 開啟 http://127.0.0.1:5000/login，使用 manager1（DEMO1）、manager2（DEMO2）、operator（統家接單）或 admin（管理者）；密碼均取自本機 DEMO_PASSWORD，僅為合成示範帳號。示範起點為 2026-10-08 21:00 Asia/Taipei，時間暫停；所有頁面持續標示示範時間。完整管理介面留 A04。
+
+新版.env.example的合成示範密碼為managerps。既有資料庫沿用建立帳號時的密碼，單改.env不會同步更新；保留資料改密碼的方法見操作入口。SECRET_KEY的產生指令僅顯示新值，須先自行填入.env再啟動Flask。
 
 ## 每次重新開工（所有成員）
 
@@ -81,8 +88,8 @@ $env:MODULE_DEV='C'
 
 1. 一般瀏覽器開啟 http://127.0.0.1:5000/login，以manager1及本機.env的DEMO_PASSWORD登入。預期首頁顯示帳號與示範時間。
 2. 開啟 http://127.0.0.1:5000/modules/c/，預期有測試／未真實整合標示；這是基礎頁，不代表C訂購功能完成。開啟/modules/b/應為404，因本次只啟用C。
-3. 一般視窗開啟/api/auth/me，記下manager1所屬DEMO1的stores[].id。另開無痕視窗，以manager2登入並由同一API記下DEMO2的id；不要假設id固定為1／2。
-4. 回到manager1的一般視窗，開啟/api/stores/<DEMO1的id>/context應成功顯示JSON（HTTP 200）；將id換為DEMO2應為HTTP 404。可在瀏覽器開發工具的Network查看狀態碼。
+3. 依[跨店權限逐步指引](docs/team-start.md#5-跨店權限先查身份再看資料)分別在一般／無痕視窗登入manager1／manager2，先查username，再記下stores內的門市id；最外層id是帳號id。
+4. 依該指引驗證兩位店長：本店200、他店404。回報時附帳號、門市id及實際結果；讀到DEMO2資料須先確認當時是否為manager2，不能單憑JSON判定隔離通過。
 5. 完成後回PowerShell按Ctrl+C停止Flask，清除本次設定：
 
 ```powershell
@@ -132,6 +139,7 @@ git switch -c feat/b-module
 以 C 為例，B／D 替換兩處字母：
 
 ```powershell
+$env:APP_ENV='demo'
 $env:MODULE_DEV='C'
 .\.venv\Scripts\python -m flask --app wsgi seed-module C
 .\.venv\Scripts\python -m flask --app wsgi run --host 127.0.0.1 --port 5000

@@ -18,6 +18,8 @@ git merge-base --is-ancestor a03-parallel-v2 origin/main
 
 ### 組員取得修正版與開工
 
+先讀[組員操作入口：現在要做什麼](team-start.md)，依目前狀態選首次安裝、日常啟動、人工核對或PR交接，內含可直接貼給Codex的下一句。此入口整理操作；程式發布基準仍為下述a03-parallel-v2。
+
 尚未開始模組且工作目錄乾淨者執行以下指令；C／D將最後一行換成feat/c-module／feat/d-module。有未提交修改或已有模組分支者，先依agent.md第5.1節保留工作並在自己的分支同步，不重建或覆寫分支。
 
 ```powershell

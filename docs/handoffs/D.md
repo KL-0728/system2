@@ -1,5 +1,7 @@
 # D 模組交接
 
+不清楚下一步時先看[組員操作入口](../team-start.md)：D使用MODULE_DEV=D及operator，店長收貨用manager1，依目前狀態取得啟動／實測／PR的指令；本模組進度仍以下表為準。
+
 - 任務：統家履約、收貨及待辦；目前 D01–D05 尚未開始。
 - 發布：先核對 docs/parallel-ready.md 的實際基準與合約 v1；不可把 A03 支援當自己模組完成。
 - 分支：feat/d-module；同分支連續 D01→D05，不等其他人成果合併。
