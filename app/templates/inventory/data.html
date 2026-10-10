@@ -5,7 +5,7 @@
 <div id="inventory-app" data-store-id="{{ store.id }}" data-actor-id="{{ actor_id }}">
 <div class="data-heading"><div><p class="eyebrow">{{ store.code }} · {{ store.name }}</p><h1>資料管理</h1>
 <p>先確認銷售入帳，再核對 21:00 實盤。所有數量以「件」計。</p></div>
-<a class="button-link" href="/store/ordering?store_id={{ store.id }}">回補貨</a></div>
+<a class="button-link" href="/store/replenishment?store_id={{ store.id }}">補貨計算</a></div>
 <nav class="data-nav" aria-label="資料管理區段"><a href="#stock-section">庫存狀況</a><a href="#sales-section">銷售匯入</a><a href="#count-section">盤點／修訂</a></nav>
 <p id="data-window">讀取庫存與時間基準中…</p>
 <p class="data-note">現貨為每日 21:00 帳面加已入帳的後續異動；21:00–22:00 銷售不拆算，並非即時 POS 庫存。</p>

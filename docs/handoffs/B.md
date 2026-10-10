@@ -1,28 +1,77 @@
 # B 模組交接
 
-不清楚下一步時先看[組員操作入口](../team-start.md)。本次只授權 B02，沿用 B01 成果；完成後停止，不自動進入 B03–B05。畫面操作見 [B02 核對指南](../b02-manual-testing.md)。
+本次只授權 **B03**，沿用已提交的B01／B02。B03已實作及自測，完成後停止；不進B04、不commit、不push、不開PR、不合併main。現在請B依[B03畫面核對指南](../b03-manual-testing.md)實測；以下AI證據不代填人工或產品驗收通過。
 
-- 任務：B02 銷售匯入與盤點操作已完成製作與 AI 自測；B01 組員回報結果保留。等待 B 畫面核對，停在 B02，不進 B03。
-- 遠端：origin = https://github.com/KL-0728/system2；本次 fetch／pull --ff-only 成功。
-- 分支：feat/b-module，已有 origin/feat/b-module 上游；本次 fetch origin --tags 與 pull --ff-only 成功，Already up to date，開工時工作目錄乾淨。
-- 基準：origin/main f2d5f67452ac249fe14a979a1433d69fa2802236；HEAD／個人上游 a139a7a563d896448b10972b57d3f2bc49552220（B01完成）。main 已在本分支歷史中；a03-parallel-v2 1744fbd01446597b3be6c552b991476d86950b75 亦已驗為祖先。
-- 合約：docs/contracts.md／app/contracts.py v1 不變；schema／migration head 884e7a53a8c8 不變。
-- 本次被測版本：HEAD a139a7a **加未提交的 B02 修改**。下方 B01 自測為前次 f2d5f67＋當時本機 B01 修改的歷史證據，不混用兩次測試結果。
-- 正式提供者：inventory_writer／integrity，由 app/modules/inventory/services.py.install() 註冊；不新增 runs，也不實作 C／D 流程。已註冊真實提供者不會被 MODULE_DEV 的替身覆蓋。
-- 環境：Windows／Python 3.12／MySQL 9.6 InnoDB；本次建立隔離 127.0.0.1:3308、system2_b01_demo／system2_b01_test、.venv。B01 階段 demo 僅套 migration；B02 本次用 inventory prepare-demo 首次建立持久化合成帳號 manager1／manager2／operator／admin，密碼沿用本機 DEMO_PASSWORD；業務時間2026-10-09 21:20，demo尚未做B02匯入／盤點操作。既有 3306、.env、他人資料均未修改。資料及隨機本機憑證只存 Git 忽略的 instance/。
-- B 核對回報：2026-10-11，B 回報「70 passed in 48.61s」，記為組員重跑測試通過；未另提供命令、版本及完整輸出。數字核對腳本、瀏覽器／手機與真實跨模組實測結果尚未回報。
-- 提交／推送／PR／合併：B01 既有 a139a7a 已在個人上游；本次 B02 AI 均未執行，main 未新增提交。依本次指示停在 B02。
-- 真實跨模組整合：待 A05；完整 V 驗收待 A06。以下是 V32／V33／V46／V48／V49 的 B01 服務部分證據，不等同 CSV、訂購、收貨及產品驗收完成。
+- 分支：feat/b-module；開工乾淨；git fetch origin --tags、git pull --ff-only成功（Already up to date）。
+- 遠端：https://github.com/KL-0728/system2；HEAD／個人上游 5ca02631e02212826d2e923d30fb1c11077f14a0（b2 complete）。B01 a139a7a及B02由組員先前提交／推送，本次AI未執行發布。
+- 基準：origin/main f2d5f67452ac249fe14a979a1433d69fa2802236及a03-parallel-v2 1744fbd01446597b3be6c552b991476d86950b75，祖先檢查均結束碼0；沒有新增main需要合併。
+- 被測版本：5ca0263＋本機未提交B03修改。合約v1、spec、schema、migration head 884e7a53a8c8均不變；不修改A／C／D檔案或凍結消費端測試。
+- 正式B提供者：inventory_writer／integrity／runs。B03使用相同呼叫端session，不commit／rollback；生成只保存不可變run／品項／稽核，不改庫存或門市計算版本。缺D來源503，不默默回退。
+- 開發界線：MODULE_DEV=B的open_orders為ControlledOpenOrders；正式B公式／H／快照不是替身。分段來源真實唯一性及真實履約留A05；完整產品V驗收留A06。
+- 環境：Windows／Python3.12／MySQL9.6 InnoDB，B專用127.0.0.1:3308/system2_b01_demo及system2_b01_test。既有3306、.env及他人資料未修改。
+- 本次新增持久化合成B03DEMO（id3）／b03manager，密碼沿用本機DEMO_PASSWORD。保留DEMO1／DEMO2活動，不改密碼／時鐘。業務時間2026-10-09 21:20，已用真實Edge保存B03快照#1並試算；全部既有門市版本、庫存數量／版本、時鐘前後相等。prepare-b03-demo重跑只保留原資料。
+- B01人工歷史：2026-10-11，B回報「70 passed in 48.61s」，保留為組員重跑通過；未擴大解讀成瀏覽器或產品驗收。
+- B03目前限制：完整回歸仍有兩項共用測試失敗，原因與協調項目如下，不宣稱全套綠燈。B03核心、畫面及最小真實B→C草稿讀取已驗證；不改合約遷就測試。
 
-| 階段 | 本次改動 | AI測試指令／結果／SHA | 人工步驟與結果 | 未完成／下一步 |
+| 階段 | 改動 | AI測試／版本 | 人工結果 | 下一步 |
 | --- | --- | --- | --- | --- |
-| B01 | 同交易庫存異動、來源唯一與原結果重試；21:00盤點差額、不可變修訂與主紀錄基準、提交鍵冪等；H、連續日常入帳、負帳面對帳阻擋；正式注入 | 全套 pytest 121 passed；B01＋合約重驗 70 passed（B01 42、合約28）；數字核對 PASS；db check 無新增upgrade；f2d5f67＋未提交修改，命令詳見下文 | 2026-10-11 B 回報：70 passed in 48.61s；組員重跑測試通過，數字腳本／瀏覽器結果未回報 | 前階段結果已記錄；成果已由組員提交於a139a7a，本次沿用 |
-| B02 | CSV整批驗證／提交／更正；歷史轉日常防重扣；盤點／修訂畫面；完整性／負帳面／跨盤點對帳阻擋；手機與原請求恢復 | 全套173 passed in 155.69s（B02服務／API52例）；真實Edge 6 passed in 28.00s；db check無新upgrade、環境PASS、node語法及diff檢查通過；a139a7a＋未提交修改 | 待B按B02畫面指南實測，不代填人工通過 | 完成後停在B02；不進B03，不提交／推送／開PR |
-| 03 | 未開始 | 未執行 | 未執行 | 本分支02自測後才可開始 |
-| 04 | 未開始 | 未執行 | 未執行 | 本分支03自測後才可開始 |
-| 05 | 未開始 | 未執行 | 未執行 | 完整人工指南及模組PR交接 |
+| B01 | 同交易庫存異動、來源唯一與重試、盤點差額／不可變修訂、H與入帳阻擋 | 前次全套121 passed；B＋合約70 passed；數字核對PASS；f2d5f67＋當時未提交修改 | B回報70 passed in 48.61s；其餘未回報 | 已由組員提交a139a7a，沿用 |
+| B02 | CSV整批驗證／提交／更正、歷史轉日常、防重扣、盤點／修訂畫面及回應遺失恢復 | 前次全套173 passed in 155.69s；真實Edge6 passed in 28.00s；a139a7a＋當時未提交修改 | 畫面人工結果尚未回報 | 已由組員提交5ca0263，沿用；保留前次證據 |
+| B03 | 七日品質／Decimal輸出／精確整箱、固定B及L、U/C/RISK、雙版時序／容量、不可變run查詢／明細、v1 runs註冊及畫面 | B03新增48例通過；全套219 passed／2 failed in 146.51s；Edge9 passed in26.29s；demo Edge PASS；5ca0263＋未提交B03 | 待B照B03指南實測 | 停在B03；兩個共用舊假設請A協調；不發布、不進B04 |
+| B04 | 未開始 | 未執行 | 未執行 | 本次不授權 |
+| B05 | 未開始 | 未執行 | 未執行 | 本次不授權 |
 
-## B02 改動、測試及界線
+## B03 改動與證據
+
+- app/services/forecasting.py：七日需求、R1／有效輪次L、固定SS、U/C扣抵與向上整箱；用整數分子／分母保存精確整箱邊界，以固定60位Decimal輸出及JSON字串，無float需求運算。有效全零仍計算SS，零需求不強配箱。丟失銷量不形成欠貨。
+- app/services/replenishment.py：七個固定連續營業日，不略過缺檔／缺貨／未正常營業；品質無效或H不可用時模型量與建議均null。保存七日日期／營業／缺貨、盤點／入帳來源／缺口、政策版本及參數、人工欄null、來源、公式、警示和曲線。超技術上限保留null與阻擋，不截斷。
+- 同一交易按門市鎖與商品順序讀取有效庫存，核對D回應的門市／版本／時間／商品／來源唯一性／合法分桶。U未承諾與RISK事實可見；期外未結仍列未來預覽，逾期來源不虛構新ETA或加回H。
+- 時序固定B逐日21:00先銷售、後到貨；已承諾＋候選與含待接單／風險＋候選分開。到貨前缺口、到貨後容量與最終數量重新試算；容量不直接H+Q，不縮量。risk_evaluated_at及配送輪次改變重新讀來源及重算L，不覆寫歷史run。
+- 使用既有ReplenishmentRun／RunItem及共享不可變守衛，不改模型欄位／schema／migration。Numeric欄位作儲存索引值，v1讀取以快照保存的Decimal字串為準，避免12位欄位截精度後再算。
+- app/modules/inventory/replenishment_routes.py、services.py、routes.py：POST/GET /api/replenishment/runs、context及試算API；店長／admin、跨店、CSRF、版本與截止驗證；正式runs供C使用。/store/replenishment為B03畫面，/store/data增加返回計算入口；自己的模板／CSS／JS，不改共用base或C頁。
+- app/modules/inventory/replenishment_demo.py：只新增獨立B03合成門市／帳號／政策／三個商品的歷史資料／已核對合成庫存／三輪配送；資料不足案例刻意缺一日。明示合成，不冒充正式盤點／D履約；重跑不重設。
+- tests/test_replenishment.py：48例，涵蓋規格30件、29取30、充足H為0、全零、缺檔／缺貨／閉店／錯區間、H缺口／負值／對帳、來源場景／錯誤／唯一性、期限等於到點、L1/L3、2140固定B、22:00截止、容量、非法整箱／技術上限、快照不可變／回滾、權限／CSRF、呼叫端Decimal精度及C讀真實run／建測試草稿。後者只證明最小相容，不代表正式整合全部通過。
+- tests/browser_replenishment.py：真實Edge桌面1280、手機390／320、20px文字無頁面橫向溢出；展開七日／來源／雙曲線、缺資料停用、31件不自動改量、1000件／輪次試算、原快照保留與刷新讀取。tests/browser_inventory.py既有6例一起重驗。
+- tests/manual_replenishment.py：受guard限制，只在B自己的demo使用真實Edge登入b03manager，核對42／0／null、1000雨衣警示、讀回原值及全庫存／版本／時鐘不變；每次執行只新增一筆B03計算快照。本次已執行一次並PASS，截圖在Git忽略instance/browser-check。
+- 對應V01–03、V12–14、V20、V22–24、V27、V29、V31、V39、V41、V49的B03部分；B04人工預測／歷史活動資訊／特殊直接模式、B05完整對帳／報廢退回未做。
+
+本次實際檢查：
+
+~~~powershell
+. .\instance\b01-test-env.ps1
+$env:PYTHONIOENCODING='utf-8'
+.\.venv\Scripts\python.exe scripts/check_environment.py
+.\.venv\Scripts\python.exe -m pytest tests/test_replenishment.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest tests/browser_replenishment.py tests/browser_inventory.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+$env:APP_ENV='test'
+.\.venv\Scripts\python.exe -m flask --app wsgi db check
+node --check app/static/js/replenishment.js
+git diff --check
+~~~
+
+最終全套：2 failed, 219 passed in 146.51s；221例中B03新增48例全部通過，兩個失敗均為下列未改動的共用測試。真實Edge回歸9 passed in 26.29s（B03 3＋B02 6，無skip）；持久化demo真實Edge核對PASS。環境兩行PASS，db check：No new upgrade operations detected，node --check與git diff --check結束碼0。
+
+另於APP_ENV=demo、MODULE_DEV=B執行 inventory prepare-b03-demo（首次新增，重跑保留）及 tests/manual_replenishment.py（上述兩行PASS）。首次B03專用40例22.44s；補充案例後發現新CLI測試的交易Connection無url，已修正為取實際engine.url；47例27.38s通過後增加一例Decimal精度可重現性，由最終全套驗證。以最後結果為準，未將過程失敗掩蓋為全套通過。瀏覽器6例B02為回歸，3例B03為本階段，合計9例26.29s，無skip、無warnings summary；另一筆持久化demo真實Edge核對PASS。db check無新upgrade，node及diff退出碼0；Git只有既有LF→CRLF提示。
+
+### 尚待A協調的共用測試
+
+1. tests/test_contracts.py::test_no_silent_fallback：該測試未移除runs插槽，仍假設尚未實作而期待get_provider('runs')503。現在正式B已註冊runs，取得它是正確行為；真正缺D時，生成仍503，新增B測試已證明無靜默fallback。請A調整測試前置以測「缺插槽」本身，保留原合約語意。
+2. tests/test_contracts.py::test_independent_module_boot[C-expected1]：app/routes/module_dev.py硬找controlled-test-v1／找不到時run_id0。合約要求正式提供者不被替身覆蓋，B03提供者不接受控制快照／非法id，故該開發頁422。請A協調共用開發頁與C獨立模式的provider／快照選擇；不可把受控快照假稱正式B結果。
+
+這兩处A負責的檔案與凍結測試未修改，亦未用skip／xfail或測試fixture隱藏失敗。正式B生成／讀取／evaluate與C真實草稿的最小相容已通過；MODULE_DEV=C共用示範入口仍有上述限制。此階段不能宣稱整個儲存庫全綠或正式產品整合完成。
+
+## 現在請B做什麼
+
+停止舊Flask後，依[B03畫面核對指南](../b03-manual-testing.md)啟動APP_ENV=demo／MODULE_DEV=B，用b03manager開 http://127.0.0.1:5000/store/replenishment 。L1看飲料42／雨衣0／泡麵無有效建議；展開曲線確認先銷售後到貨；試31件看INVALID_PACK，L3看S90／建議84，雨衣1000看大量／容量；再讀原快照看42／0不變。驗收指引包含完整URL、角色、時間、來源、錯誤、手機、跨店及404判讀；不可只貼匿名HTTP_404 JSON替代身份／URL。
+
+可貼聊天：
+
+> 我是B，我已核對B03，版本5ca0263＋本機B03修改，快照〈編號〉；飲料／雨衣／泡麵〈數字〉，L3／1000試算〈警示〉，31件〈錯誤〉，原快照及庫存〈結果〉，手機／權限〈結果〉。請記錄，仍停在B03，不commit、不push、不開PR，不進B04。
+
+先保留本機修改，無本次發布授權，不準備PR、不替B發布。完整模組Ready PR與真實跨模組整合依agent.md後續階段；B01「70 passed in 48.61s」維持原人工紀錄。
+
+## B02 改動、測試及界線（前次歷史）
 
 - app/services/sales.py：嚴格 UTF-8 CSV 整批逐列驗證；固定21:00區間；門市／商品／日期／件數／營業／缺貨檢查；簽章預覽綁定內容、提交者、門市版本，15分鐘真實時間期限。提交先查原成功批次，再驗新提交期限／版本；同來源不同內容409。
 - 整批更正明確指定原批次與理由、換新來源識別；一次取代原批次所有有效列。歷史只更新預測；未被盤點涵蓋且尚未入帳才可轉日常；日常更正只追加銷售差額，不降回歷史。
@@ -140,13 +189,3 @@ Start-Process -FilePath 'C:\Program Files\MySQL\MySQL Server 9.6\bin\mysqld.exe'
 ~~~
 
 只在3308未啟動時使用。不要使用A的3307啟動腳本、改寫.env或重建此資料目錄。
-
-## 現在該做什麼
-
-請 B 依 [B02畫面核對指南](../b02-manual-testing.md) 從 http://127.0.0.1:5000/store/data 實測，回報實際步驟、批次ID、飲料／雨衣前後帳面及H、錯誤文字、a139a7a＋本機未提交修改。AI完成B02後停止；不將自動測試當成組員人工或產品驗收通過。
-
-可貼到聊天：
-
-> 我是B，我已依B02畫面指南操作，結果為〈步驟、批次ID、飲料／雨衣數字及H／錯誤文字〉。請記錄，仍停在B02，不commit、不push、不開PR，不進B03。
-
-未來若要繼續B03，另明確指示；本次不準備發布。B01回報「70 passed in 48.61s」維持原紀錄，不擴大解讀為前次數字腳本／瀏覽器或完整人工驗收通過。

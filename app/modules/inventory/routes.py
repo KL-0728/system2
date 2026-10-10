@@ -166,3 +166,10 @@ def sample_csv():
 # Only B's blueprint contributes this local, additive preparation command.
 from app.modules.inventory.demo import register_demo
 register_demo(bp)
+
+from app.modules.inventory.replenishment_routes import register_replenishment
+register_replenishment(bp)
+
+
+from app.modules.inventory.replenishment_demo import register_replenishment_demo
+register_replenishment_demo(bp)
