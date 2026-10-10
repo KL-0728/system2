@@ -27,6 +27,16 @@ def test_disabled_user_and_escaped_template(seeded, client):
     assert '示範時間'.encode() in client.get('/login').data
 
 
+def test_browser_logout_requires_csrf_and_revokes_session(seeded, client):
+    response = login(client)
+    assert b'action="/logout"' in client.get('/').data
+    assert client.post('/logout').status_code == 400
+    assert client.get('/api/auth/me').status_code == 200
+    logout = client.post('/logout', data={'csrf_token': response.json['csrf_token']})
+    assert logout.status_code == 302 and logout.headers['Location'].endswith('/login')
+    assert client.get('/api/auth/me').status_code == 401
+
+
 def test_operator_cannot_admin(seeded):
     from app.services.access import authorize_store
     from app.services.errors import DomainError

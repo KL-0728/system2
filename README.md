@@ -1,6 +1,8 @@
 # 統家便利店補貨系統
 
-產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。此版本為 A 的共用基礎，尚未完成訂購、庫存與履約業務。
+產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。此版本已接入C訂購模組；B庫存／計算與D履約尚待真實整合。
+
+**A本次補修的預覽與測試請看[逐步操作指南](docs/a-manual-testing.md)**。網站需Flask＋MySQL，不能只用Live Server打開HTML。
 
 **組員先看[操作入口：現在要做什麼](docs/team-start.md)**：包含首次安裝、每日啟動、示範帳密、跨店檢查圖例、錯誤判讀，以及各狀態可直接貼給Codex的下一句。下文保留環境與技術細節。
 
@@ -174,6 +176,8 @@ check_module 只用 Flask HTTP 測試客戶端，並非瀏覽器人工實測。C
 此命令驗證本機 test DB 與所有資料表空白（除 alembic_version），再移除空 schema、從零 upgrade 並 check／heads；有資料立即拒絕。一般 pytest 不清 schema、不 drop_all，只回滾測試交易。基準採向前 migration；舊版自動產生的 downgrade 會遇到 MySQL 外鍵索引限制，不作資料回退保證，也不修改已發布 migration。資料恢復使用備份，新變更使用相容 revision。
 
 ## 本機 A 的隔離 MySQL 實例
+
+前端事件測試已加入CI，本機可用 `node --test tests/ordering_ui.test.cjs` 重跑。真實Edge測試為選用：先以虛擬環境安裝 `python -m pip install playwright`，已有Microsoft Edge時不需下載瀏覽器；再執行 `.\.venv\Scripts\python.exe -m pytest -q tests/browser_ordering.py -p no:cacheprovider`。此檔案不包含在一般pytest；Playwright缺少時會跳過，不能記為通過。截圖保存於忽略的 `instance/browser-check/`。測試限定獨立test DB，不用demo測試。
 
 本次自測另啟動 MySQL 9.6.0，僅綁127.0.0.1:3307，資料在忽略的 instance/mysql-data、程序識別在 instance/mysql.pid；與既有 MySQL96／3306服務分開。A 的 .env 已設定此實例及兩個獨立 DB，憑證未提交；B／C／D 應使用自己電腦的 MySQL 與各自 .env，不複製 A 的資料目錄。
 
