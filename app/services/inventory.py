@@ -216,10 +216,17 @@ class InventoryService:
                 if not _posted_day(session, store_id, product_id, day, lock=True):
                     missing.append(day.astimezone(TAIPEI).date().isoformat())
                 day += timedelta(days=1)
+        covered_tasks = session.execute(db.select(InventoryReconciliation).where(
+            InventoryReconciliation.store_id == store_id, InventoryReconciliation.product_id == product_id,
+            InventoryReconciliation.source_type == 'sales_covered', InventoryReconciliation.status == 'OPEN')
+            .execution_options(populate_existing=True).with_for_update()).scalars().all()
+        if covered_tasks:
+            valid_baseline = None
         warnings = []
         if valid_baseline is None or missing:
             warnings.append(WarningDTO('INVENTORY_GAP', '缺少有效盤點基準或日常銷售未連續入帳',
-                {'dates': missing, 'baseline_missing': valid_baseline is None}))
+                {'dates': missing, 'baseline_missing': valid_baseline is None,
+                    'reconciliation_ids': [task.id for task in covered_tasks]}))
         if row.reconciliation_required or row.book_physical_qty < row.book_unsellable_qty or row.book_unsellable_qty < 0:
             warnings.append(WarningDTO('NEGATIVE_BOOK', '帳面可售量為負或非法，請先對帳',
                 {'physical_book': row.book_physical_qty, 'unsellable_book': row.book_unsellable_qty,
@@ -304,6 +311,17 @@ class InventoryService:
             physical_delta, unsellable_delta, expected_version, actor_id, cutoff_at, reason)
         movement = self.apply_movement(mutation=mutation, session=session)
         row.physical_qty, row.unsellable_qty, row.counted_at = physical_qty, unsellable_qty, utc_naive(cutoff_at)
+        # A new effective count reconciles historical corrections already covered by this cutoff.
+        tasks = session.execute(db.select(InventoryReconciliation).where(
+            InventoryReconciliation.store_id == store_id, InventoryReconciliation.product_id == product_id,
+            InventoryReconciliation.source_type == 'sales_covered', InventoryReconciliation.status == 'OPEN')
+            .with_for_update()).scalars().all()
+        for task in tasks:
+            if (task.resolution or {}).get('business_date', '9999-12-31') <= cutoff_at.astimezone(TAIPEI).date().isoformat():
+                task.status, task.resolved_at, task.resolved_by = 'RESOLVED', utc_naive(now), actor_id
+                task.version += 1
+                task.resolution = {**(task.resolution or {}), 'count_id': count.id, 'count_version': count.version}
+
         revision = InventoryCountRevision(count_id=count.id, revision=count.version,
             physical_qty=physical_qty, unsellable_qty=unsellable_qty, physical_delta=physical_delta,
             unsellable_delta=unsellable_delta, expected_version=expected_version, reason=reason,
