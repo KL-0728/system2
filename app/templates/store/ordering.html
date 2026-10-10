@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}補貨工作台｜統家便利店{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ordering.css') }}">
+<nav class="store-nav" aria-label="店長主選單">
+  <a aria-current="page" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">補貨</a>
+  <a href="{{ url_for('ordering.orders_page', store_id=store.id) }}">訂單</a>
+  <span aria-disabled="true" title="由履約模組提供">收貨</span>
+</nav>
+
+<header class="page-heading">
+  <div><p class="eyebrow">{{ store.code }}</p><h1>每日補貨工作台</h1></div>
+  <p>門市：{{ store.name }}。依序完成「調整數量 → 核對提醒 → 確認送出」。</p>
+</header>
+
+<ol class="stage-list" aria-label="補貨三階段">
+  <li class="active" data-stage-indicator="1"><strong>1</strong> 調整數量</li>
+  <li data-stage-indicator="2"><strong>2</strong> 核對提醒</li>
+  <li data-stage-indicator="3"><strong>3</strong> 送出結果</li>
+</ol>
+
+{% if not intro_status.acknowledged %}
+<section class="panel" id="intro-panel" aria-labelledby="intro-title">
+  <h2 id="intro-title">首次使用說明</h2>
+  <p>系統依目前可取得的庫存、歷史銷售與設定產生補貨建議。預測可能與實際需求不同，也不一定包含您已知的活動或團體訂購。請核對資料、查看警示，依門市情況調整後確認送出。系統將保存建議、調整與確認紀錄；統家接單後才會確認供貨條件。</p>
+  <label class="check-row"><input id="intro-ack" type="checkbox"> 我已了解建議的用途、限制及送單確認流程。</label>
+  <button id="intro-submit" type="button">確認並進入補貨</button>
+  <p class="field-error" id="intro-error" role="alert"></p>
+</section>
+{% else %}
+<details class="panel compact"><summary>使用說明</summary>
+  <p>建議不等於承諾供貨；請核對庫存、提醒與特殊需求後再送出。</p>
+</details>
+{% endif %}
+
+{% if intro_status.acknowledged %}
+<section id="stage-workbench" class="panel" data-stage="1">
+  <div class="toolbar">
+    <div><h2>1. 調整數量</h2><p>商品單位固定顯示為件；箱入數用於整箱檢查。</p></div>
+    <label>搜尋商品 <input id="product-search" type="search" placeholder="名稱或商品代碼"></label>
+  </div>
+  {% if not run %}
+    <div class="empty-state"><strong>目前沒有可用的補貨建議</strong><p>請先由庫存模組產生本輪建議，再回到此頁。</p></div>
+  {% else %}
+    <div id="global-error" class="error-box" role="alert" hidden></div>
+    <div class="worktable" role="table" aria-label="補貨商品">
+      <div class="work-row work-head" role="row">
+        <span>商品</span><span>可用庫存</span><span>待接單／在途</span><span>系統建議</span><span>最終量</span><span>提醒與理由</span>
+      </div>
+      {% for item in run['items'] %}
+      <article class="work-row product-row" role="row" data-product-id="{{ item.product_id }}" data-suggested="{{ item.suggested_qty if item.suggested_qty is not none else '' }}" data-search="{{ item.sku }} {{ item.name }}">
+        <div class="product-cell"><strong data-product-name>{{ item.name }}</strong><small>{{ item.sku }} · 每箱 {{ item.pack_size }} 件</small></div>
+        <div><span class="mobile-label">可用庫存</span>{{ item.h if item.h is not none else '不可用' }} 件</div>
+        <div><span class="mobile-label">待接單／在途</span>
+          {% set pending = item.sources|selectattr('bucket', 'equalto', 'U')|map(attribute='quantity')|sum %}
+          {% set committed = item.sources|selectattr('bucket', 'equalto', 'C')|map(attribute='quantity')|sum %}
+          <span class="supply pending">待接單 {{ pending }}</span><span class="supply committed">已承諾 {{ committed }}</span>
+        </div>
+        <div><span class="mobile-label">系統建議</span><span class="suggested">{{ item.suggested_qty if item.suggested_qty is not none else '無法計算' }}</span> 件</div>
+        <div class="quantity-cell"><label for="qty-{{ item.product_id }}">最終量（件）</label>
+          <div class="stepper"><button type="button" data-step="-{{ item.pack_size }}" aria-label="減少一箱">−</button>
+          <input id="qty-{{ item.product_id }}" data-field="final_qty" type="number" min="0" max="1000000" step="{{ item.pack_size }}" value="{{ item.suggested_qty or 0 }}">
+          <button type="button" data-step="{{ item.pack_size }}" aria-label="增加一箱">＋</button></div>
+          <small class="comparison"></small><p class="field-error" data-error-for="final_qty"></p>
+        </div>
+        <div class="reason-cell"><label>調整原因
+          <select data-field="reason_code">
+            <option value="">未調整</option><option value="promotion">促銷</option><option value="local_demand">在地需求</option>
+            <option value="display">陳列調整</option><option value="reduce_stock">降低庫存</option><option value="skip">本次不訂</option><option value="other">其他</option>
+          </select></label>
+          <label>理由／特殊需求說明<textarea data-field="reason" maxlength="500" placeholder="重要例外請至少填10個字，包含日期、數量與安排"></textarea></label>
+          <label class="check-row"><input data-field="manual_ack" type="checkbox"> 本輪確認使用畫面所列人工預測</label>
+          <details><summary>特殊活動或團體需求</summary>
+            <label>需求日期 <input data-field="need_date" type="date"></label>
+            <label>需求量（件） <input data-field="need_qty" type="number" min="1" max="1000000"></label>
+            <label>存放／交付安排 <input data-field="arrangement" maxlength="200"></label>
+          </details>
+          <details class="calculation"><summary>為什麼訂這個數量</summary>
+            <dl><dt>預估日銷量</dt><dd>{{ item.mu if item.mu is not none else '無法計算' }}</dd>
+              <dt>目標庫存</dt><dd>{{ item.target_stock if item.target_stock is not none else '無法計算' }}</dd>
+              <dt>安全庫存</dt><dd>{{ item.safety_stock }} 件</dd><dt>保護期間</dt><dd>{{ item.lead_days + 1 }} 日</dd></dl>
+            <p>初步建議量：{{ item.raw_qty if item.raw_qty is not none else '無法計算' }}，再依每箱 {{ item.pack_size }} 件取整。</p>
+          </details>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="sticky-actions"><span id="draft-status" role="status">尚未建立草稿</span>
+      <button id="preview-button" type="button">儲存並核對提醒</button></div>
+  {% endif %}
+</section>
+
+<section id="stage-preview" class="panel" data-stage="2" hidden>
+  <h2>2. 核對提醒與送出內容</h2>
+  <p>重要例外會逐品項顯示；一般品項不要求重複勾選。</p>
+  <div class="exception-toolbar" id="exception-toolbar" hidden>
+    <strong>尚有 <span id="exception-count">0</span> 個重要例外待確認</strong>
+    <button id="exception-filter" type="button" class="secondary" aria-pressed="false">只看待處理</button>
+  </div>
+  <div id="preview-summary"></div>
+  <div id="exception-list"></div>
+  <label class="check-row order-confirm"><input id="order-ack" type="checkbox"> 我已核對庫存與未到貨訂單、最終訂購數量及本單提醒，並納入已知特殊需求，確認送出目前顯示的訂購內容。</label>
+  <p class="fine-print">確認記錄用於還原本次訂購決策。系統計算、資料處理與統家供貨流程的問題仍須依實際紀錄處理。</p>
+  <div class="button-row"><button id="back-button" type="button" class="secondary">返回修改</button>
+    <button id="submit-button" type="button">確認數量並送出補貨單</button></div>
+  <div id="submit-error" class="error-box" role="alert" hidden></div>
+</section>
+
+<section id="stage-result" class="panel" data-stage="3" hidden>
+  <h2>3. 送出結果</h2><div id="result-content" role="status"></div>
+</section>
+{% endif %}
+
+{% if run %}<script id="ordering-bootstrap" type="application/json">{{ {'store_id': store.id, 'run': run}|tojson }}</script>{% endif %}
+<script src="{{ url_for('static', filename='js/ordering.js') }}" defer></script>
+{% endblock %}

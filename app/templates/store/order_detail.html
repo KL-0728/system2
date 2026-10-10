@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block title %}訂單明細｜統家便利店{% endblock %}{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ordering.css') }}">
+<nav class="store-nav"><a href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">補貨</a><a href="{{ url_for('ordering.orders_page', store_id=store.id) }}">訂單</a><span aria-disabled="true">收貨</span></nav>
+<p><a href="{{ url_for('ordering.orders_page', store_id=store.id) }}">← 回訂單列表</a></p><h1>訂單與決策明細</h1>
+<div id="order-detail" data-order-id="{{ order_id }}" data-order-number="{{ order_number }}" data-store-id="{{ store.id }}"><p>載入中…</p></div><div id="order-error" class="error-box" role="alert" hidden></div>
+<script src="{{ url_for('static', filename='js/orders.js') }}" defer></script>
+{% endblock %}
