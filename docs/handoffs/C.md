@@ -7,10 +7,10 @@
 - 分支：feat/c-module；同分支連續 C01→C05，不等其他人成果合併。
 - 自己的入口：app/modules/ordering/routes.py、services.py 的 install()；業務 models／services 依 agent.md。
 - 開發模式：MODULE_DEV=C，外部替身 runs／integrity／open_orders／fulfillment；限獨立本機 demo DB，頁面明示來源。啟動、seed-module、check_module、合約測試與人工正常／錯誤步驟見 README「A03：B／C／D 各自開工」。
-- 實測版本：`feat/c-module`，基準 `1be4c30` 加本次 C 模組修改。
+- 實測版本：`feat/c-module`，基準 `1be4c30`；C 模組實作提交 `99dded0`。
 - AI 模組自測：`python -m pytest -q` 為 44 passed；C 專項 `tests/test_confirmation.py tests/test_submission.py` 為 8 passed；Python／Jinja／JavaScript 語法及 `check_module.py C` 通過。實際 Flask HTTP 檢查登入、首頁及工作台200，未啟用B模組404。測試 DB 為 `system2_c_test`，demo 為 `system2_c_demo`；未以瀏覽器宣稱手機人工實測。
 - 人工實測：C 組員於 2026-10-10 回報已依本指南實測通過；未提供瀏覽器版本等額外細節，不代填未回報資料。
-- PR：C 組員已授權建立交由 A 審核的 Ready PR；不合併 main。
+- PR：[Ready PR #1](https://github.com/KL-0728/system2/pull/1)，交由 A 審核；C 不合併 main。
 - 真實跨模組整合：待 A05；V 驗收待 A06。
 
 | 階段 | 本次改動 | AI測試指令／結果／SHA | 人工步驟與結果 | 未完成／下一步 |
