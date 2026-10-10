@@ -1,4 +1,4 @@
-from flask import Blueprint, g, jsonify, render_template, request
+from flask import Blueprint, current_app, g, jsonify, render_template, request
 
 from app.contracts import dto_dict
 from app.extensions import db
@@ -11,6 +11,18 @@ from app.services.version import transaction
 
 
 bp = Blueprint('ordering', __name__)
+
+
+def latest_run(store_id):
+    # D's order factory is not a replenishment run for the C workbench.
+    statement = db.select(ReplenishmentRun).where(
+        ReplenishmentRun.store_id == store_id,
+        ReplenishmentRun.model_version != 'fixture-v1')
+    provider = current_app.extensions['service_providers'].get('runs')
+    if current_app.config['MODULE_DEV'] == 'C' and provider and provider[1]:
+        statement = statement.where(ReplenishmentRun.model_version == 'controlled-test-v1')
+    return db.session.execute(statement.order_by(
+        ReplenishmentRun.actual_generated_at.desc(), ReplenishmentRun.id.desc())).scalars().first()
 
 
 def _payload():
@@ -37,9 +49,11 @@ def _manager_store(store_id=None):
 @require_role('manager', 'admin')
 def ordering_page():
     store = _manager_store(request.args.get('store_id', type=int))
-    run = db.session.execute(db.select(ReplenishmentRun).where(
-        ReplenishmentRun.store_id == store.id).order_by(
-        ReplenishmentRun.actual_generated_at.desc(), ReplenishmentRun.id.desc())).scalars().first()
+    draft_id = request.args.get('draft_id', type=int)
+    resume = ordering_service.get_draft(g.user, draft_id) if draft_id else None
+    if resume and (resume['store_id'] != store.id or resume['status'] != 'DRAFT'):
+        raise DomainError('NOT_FOUND', '草稿不存在或已送出', 404)
+    run = db.session.get(ReplenishmentRun, resume['run_id']) if resume else latest_run(store.id)
     run_data = None
     if run:
         run_data = dto_dict(get_provider('runs').get_run(run_id=run.id, store_id=store.id,
@@ -51,7 +65,8 @@ def ordering_page():
             item.update(sku=product.sku, name=product.name, unit=product.base_unit)
     return render_template('store/ordering.html', store=store, run=run_data,
         intro_version=INTRO_VERSION,
-        intro_status=ordering_service.acknowledgement_status(g.user))
+        intro_status=ordering_service.acknowledgement_status(g.user), resume_draft=resume,
+        actor_id=g.user.id)
 
 
 @bp.get('/store/orders')
@@ -91,9 +106,7 @@ def acknowledge_intro():
 @require_role('manager', 'admin')
 def dashboard():
     store = _manager_store(request.args.get('store_id', type=int))
-    latest_run = db.session.execute(db.select(ReplenishmentRun).where(
-        ReplenishmentRun.store_id == store.id).order_by(
-        ReplenishmentRun.actual_generated_at.desc(), ReplenishmentRun.id.desc())).scalars().first()
+    run = latest_run(store.id)
     drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.store_id == store.id,
         OrderDraft.user_id == g.user.id, OrderDraft.status == 'DRAFT').order_by(
         OrderDraft.updated_at.desc())).scalars().all()
@@ -102,7 +115,7 @@ def dashboard():
     return jsonify(store={'id': store.id, 'code': store.code, 'name': store.name,
             'calculation_version': store.calculation_version},
         acknowledgement=ordering_service.acknowledgement_status(g.user),
-        latest_run_id=latest_run.id if latest_run else None,
+        latest_run_id=run.id if run else None,
         drafts=[{'id': row.id, 'version': row.version, 'run_id': row.run_id,
             'cycle_id': row.cycle_id, 'updated_at': row.updated_at} for row in drafts],
         orders=[{'id': row.id, 'number': row.number, 'status': row.status,
@@ -164,10 +177,16 @@ def submission(key):
 @require_role('manager', 'admin')
 def list_orders():
     store = _manager_store(request.args.get('store_id', type=int))
+    page = max(1, request.args.get('page', 1, type=int))
+    page_size = 20
+    total = db.session.execute(db.select(db.func.count(Order.id)).where(
+        Order.store_id == store.id, Order.fixture_only.is_(False))).scalar_one()
     rows = db.session.execute(db.select(Order).where(Order.store_id == store.id,
-        Order.fixture_only.is_(False)).order_by(Order.submitted_at.desc(), Order.id.desc())).scalars().all()
+        Order.fixture_only.is_(False)).order_by(Order.submitted_at.desc(), Order.id.desc())
+        .offset((page - 1) * page_size).limit(page_size)).scalars().all()
     return jsonify(orders=[{'id': row.id, 'number': row.number, 'status': row.status,
-        'version': row.version, 'submitted_at': row.submitted_at} for row in rows])
+        'version': row.version, 'submitted_at': row.submitted_at} for row in rows],
+        page=page, page_size=page_size, total=total, has_next=page * page_size < total)
 
 
 def _order_detail(order_id, include_fulfillment=True):
@@ -175,8 +194,17 @@ def _order_detail(order_id, include_fulfillment=True):
     value = dto_dict(ordering_service.get_order(order_id=order_id, store_id=store.id,
         actor_id=g.user.id, session=db.session))
     if include_fulfillment:
-        value['fulfillment'] = dto_dict(get_provider('fulfillment').get_summary(
-            order_id=order_id, store_id=store.id, actor_id=g.user.id, session=db.session))
+        try:
+            summary = get_provider('fulfillment').get_summary(
+                order_id=order_id, store_id=store.id, actor_id=g.user.id, session=db.session)
+            if summary.order_id != order_id or summary.store_id != store.id:
+                raise DomainError('PROVIDER_MISMATCH', '供貨摘要與訂單不一致', 409)
+            value['fulfillment'] = dto_dict(summary)
+        except DomainError as error:
+            if error.code != 'SERVICE_UNAVAILABLE':
+                raise
+            value['fulfillment'] = None
+            value['fulfillment_unavailable'] = '供貨服務尚未開放；訂購與確認紀錄仍可查看。'
     return value
 
 

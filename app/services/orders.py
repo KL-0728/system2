@@ -6,7 +6,7 @@ atomic.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from hashlib import sha256
 import json
 import secrets
@@ -80,7 +80,10 @@ def _policy(version, *, store_id, product_id):
     row = db.session.execute(db.select(PolicyVersion).where(
         PolicyVersion.store_id == store_id, PolicyVersion.product_id == product_id,
         PolicyVersion.version == version)).scalar_one_or_none()
-    parameters = row.parameters if row else {}
+    return _policy_parameters(row.parameters if row else {})
+
+
+def _policy_parameters(parameters):
     return {
         'absolute_large_qty': int(parameters.get('absolute_large_qty', 100)),
         'deviation_floor': int(parameters.get('deviation_floor', 100)),
@@ -138,11 +141,22 @@ class OrderingService:
     def _owned_draft(self, draft_id, actor, *, lock=False):
         statement = db.select(OrderDraft).where(OrderDraft.id == draft_id)
         if lock:
-            statement = statement.with_for_update()
+            statement = statement.execution_options(populate_existing=True).with_for_update()
         draft = db.session.execute(statement).scalar_one_or_none()
         if not draft or draft.user_id != actor.id:
             raise DomainError('NOT_FOUND', '草稿不存在或不可存取', 404)
+        from app.services.access import authorize_store
+        authorize_store(actor, draft.store_id, roles=('manager', 'admin'))
         return draft
+
+    @staticmethod
+    def _require_open_cycle(cycle, now):
+        if not cycle or cycle.cancelled:
+            raise DomainError('INVALID_CYCLE', '配送輪次不可用', 409)
+        if now < aware(cycle.baseline_at):
+            raise DomainError('ROUND_NOT_OPEN', '本輪尚未開放訂購；請在畫面所列開放時間後操作', 409)
+        if now >= aware(cycle.cutoff_at):
+            raise DomainError('CUTOFF_PASSED', '本輪已截止，請取得下一輪建議後重新確認', 409)
 
     def _draft_items(self, draft_id, *, lock=False):
         statement = db.select(DraftItem).where(DraftItem.draft_id == draft_id).order_by(DraftItem.product_id)
@@ -168,8 +182,7 @@ class OrderingService:
         cycle = db.session.get(DeliveryCycle, cycle_id)
         if not cycle or cycle.store_id != store_id or cycle.cancelled:
             raise DomainError('INVALID_CYCLE', '配送輪次不可用', 422)
-        if now > aware(cycle.cutoff_at):
-            raise DomainError('CUTOFF_PASSED', '本輪送單截止時間已過', 409)
+        self._require_open_cycle(cycle, now)
         supplied = final_quantities or {}
         if not isinstance(supplied, dict):
             raise DomainError('INVALID_INPUT', 'final_quantities 必須是商品與件數對照', 400)
@@ -295,6 +308,10 @@ class OrderingService:
         output_items = []
         important_products = []
         confirmation_minutes = 5
+        policy_rows = db.session.execute(db.select(PolicyVersion).where(
+            PolicyVersion.store_id == draft.store_id,
+            PolicyVersion.product_id.in_(run_items))).scalars().all()
+        policies = {(p.product_id, p.version): p.parameters for p in policy_rows}
         for row in items:
             item = run_items.get(row.product_id)
             product = products.get(row.product_id)
@@ -306,7 +323,10 @@ class OrderingService:
             if integrity.store_id != draft.store_id or integrity.product_id != row.product_id:
                 raise DomainError('PROVIDER_MISMATCH', '庫存完整性結果與門市商品不一致', 409)
             warnings = list(item.warnings)
-            policy = _policy(item.policy_version, store_id=draft.store_id, product_id=row.product_id)
+            included = row.final_qty > 0
+            if included and (item.mode == 'direct' or row.special_need is not None):
+                self._validate_special_need(row)
+            policy = _policy_parameters(policies.get((row.product_id, item.policy_version), {}))
             confirmation_minutes = min(confirmation_minutes, policy['confirmation_minutes'])
             if not integrity.usable:
                 for warning in integrity.warnings:
@@ -342,12 +362,14 @@ class OrderingService:
                 _append_warning(warnings, WarningDTO('SPECIAL_DEMAND', '已知活動或團體需求須加強確認',
                     {'need_date': row.special_need.get('need_date'),
                         'need_qty': row.special_need.get('need_qty')}))
-            block_codes = sorted({warning.code for warning in warnings if warning.code in BLOCK_CODES})
+            # Excluded items remain in the decision snapshot, but cannot block
+            # the valid positive items that will actually be ordered.
+            block_codes = sorted({warning.code for warning in warnings if warning.code in BLOCK_CODES}) if included else []
             if block_codes:
                 blocks.append({'product_id': row.product_id, 'codes': block_codes})
-            important = sorted({warning.code for warning in warnings if warning.code in IMPORTANT_CODES})
+            important = sorted({warning.code for warning in warnings if warning.code in IMPORTANT_CODES}) if included else []
             reason_text = self._important_reason(row)
-            if set(important) & REASON_REQUIRED_CODES and len(reason_text.strip()) < 10:
+            if set(important) & REASON_REQUIRED_CODES and len(''.join(reason_text.split())) < 10:
                 blocks.append({'product_id': row.product_id, 'codes': ['IMPORTANT_REASON_REQUIRED']})
             if important:
                 important_products.append(row.product_id)
@@ -366,6 +388,7 @@ class OrderingService:
                 'manual_forecast_acknowledged': row.manual_forecast_acknowledged,
                 'manual_forecast': item.manual_forecast,
                 'policy_version': item.policy_version, 'inventory_version': item.inventory_version,
+                'policy_parameters': policy,
                 'capacity': item.capacity, 'lead_days': item.lead_days,
                 'safety_stock': item.safety_stock, 'sources': sources,
                 'source_details': [dto_dict(source) for source in item.sources],
@@ -397,6 +420,31 @@ class OrderingService:
         return snapshot, _hash(stable), blocks, confirmation_minutes
 
     @staticmethod
+    def _validate_special_need(row):
+        special = row.special_need
+        invalid = []
+        if not isinstance(special, dict):
+            invalid = ['need_date', 'need_qty', 'arrangement']
+        else:
+            raw_date = special.get('need_date')
+            try:
+                if not isinstance(raw_date, str) or date.fromisoformat(raw_date).isoformat() != raw_date:
+                    invalid.append('need_date')
+            except ValueError:
+                invalid.append('need_date')
+            try:
+                if quantity(special.get('need_qty')) <= 0:
+                    invalid.append('need_qty')
+            except DomainError:
+                invalid.append('need_qty')
+            arrangement = special.get('arrangement')
+            if not isinstance(arrangement, str) or not arrangement.strip() or len(arrangement.strip()) > 200:
+                invalid.append('arrangement')
+        if invalid:
+            raise DomainError('SPECIAL_NEED_REQUIRED', '請完整填寫特殊需求日期、需求量及存放／交付安排', 422,
+                {'product_id': row.product_id, 'fields': invalid})
+
+    @staticmethod
     def _important_reason(row):
         pieces = [row.reason or '']
         if row.special_need:
@@ -420,14 +468,23 @@ class OrderingService:
         cycle = db.session.get(DeliveryCycle, draft.cycle_id)
         if not cycle or cycle.cancelled:
             raise DomainError('INVALID_CYCLE', '配送輪次已取消', 409)
-        if now > aware(cycle.cutoff_at):
-            raise DomainError('CUTOFF_PASSED', '本輪送單截止時間已過', 409)
+        self._require_open_cycle(cycle, now)
         snapshot, content_hash, blocks, minutes = self._evaluate(actor, draft, evaluated_at=now)
         if snapshot['store_version'] != store.calculation_version:
             raise DomainError('VERSION_CONFLICT', '資料已更新，請重新產生建議', 409,
                 {'current_version': store.calculation_version})
         if blocks:
-            raise DomainError('PREVIEW_BLOCKED', '草稿仍有阻止送出的問題', 422, {'items': blocks})
+            item_map = {item['product_id']: item for item in snapshot['items']}
+            for block in blocks:
+                item = item_map.get(block['product_id'])
+                block['name'] = item['name'] if item else '訂購輪次'
+                warnings = {warning['code']: warning['message'] for warning in item['warnings']} if item else {}
+                block['messages'] = [
+                    '重要例外理由至少需要10個非空白字元；請說明需求及收貨安排'
+                    if code == 'IMPORTANT_REASON_REQUIRED' else warnings.get(code, '請重新核對訂購資料')
+                    for code in block['codes']]
+            message = '；'.join(f"{block['name']}：{'、'.join(block['messages'])}" for block in blocks)
+            raise DomainError('PREVIEW_BLOCKED', message, 422, {'items': blocks})
         token = secrets.token_urlsafe(32)
         db.session.execute(db.delete(OrderConfirmation).where(
             OrderConfirmation.draft_id == draft.id, OrderConfirmation.order_id.is_(None)))
@@ -476,8 +533,9 @@ class OrderingService:
         draft = self._owned_draft(draft_id, actor, lock=True)
         existing = self._existing_submission(actor, draft.store_id, key, payload_hash, lock=True)
         if existing:
-            return self.order_result(existing.order_id, replayed=True)
-        prior_order = db.session.execute(db.select(Order).where(Order.draft_id == draft.id)).scalar_one_or_none()
+            return self.order_result(existing.order_id, replayed=True, current_read=True)
+        prior_order = db.session.execute(db.select(Order).where(Order.draft_id == draft.id)
+            .with_for_update()).scalar_one_or_none()
         if prior_order:
             raise DomainError('DRAFT_ALREADY_SUBMITTED', '此草稿已由另一請求送出', 409,
                 {'order_id': prior_order.id})
@@ -495,10 +553,9 @@ class OrderingService:
             raise DomainError('CONFIRMATION_USED', '確認憑證已使用', 409)
         now = business_now()
         cycle = db.session.get(DeliveryCycle, draft.cycle_id)
-        if now > aware(confirmation.expires_at):
+        if now >= aware(confirmation.expires_at):
             raise DomainError('CONFIRMATION_EXPIRED', '確認已超過五分鐘，請重新預覽', 409)
-        if not cycle or cycle.cancelled or now > aware(cycle.cutoff_at):
-            raise DomainError('CUTOFF_PASSED', '配送輪次已取消或截止時間已過', 409)
+        self._require_open_cycle(cycle, now)
         if confirmation.draft_version != draft.version or confirmation.store_version != store.calculation_version:
             raise DomainError('VERSION_CONFLICT', '資料已更新，請重新預覽', 409,
                 {'current_version': store.calculation_version})
@@ -519,8 +576,7 @@ class OrderingService:
             status='SUBMITTED', fixture_only=False)
         db.session.add(order)
         db.session.flush()
-        deduction_minutes = min(_policy(item['policy_version'], store_id=draft.store_id,
-            product_id=item['product_id'])['deduction_minutes'] for item in positive)
+        deduction_minutes = min(item['policy_parameters']['deduction_minutes'] for item in positive)
         deduction_expires_at = min(now + timedelta(minutes=deduction_minutes), aware(cycle.arrival_at))
         for item in positive:
             db.session.add(OrderItem(order_id=order.id, product_id=item['product_id'],
@@ -573,6 +629,9 @@ class OrderingService:
             if not isinstance(handling, str) or not handling.strip():
                 raise DomainError('EXCEPTION_HANDLING_REQUIRED', '請選擇重要例外處理方式', 422,
                     {'product_id': product_id})
+            if handling.strip() == 'exclude':
+                raise DomainError('EXCLUSION_REQUIRES_EDIT', '排除品項須先將草稿數量改為0，再重新預覽', 422,
+                    {'product_id': product_id, 'repreview_required': True})
             if reason is not None and (not isinstance(reason, str) or len(reason.strip()) > 500):
                 raise DomainError('INVALID_REASON', '例外理由最多500字', 422,
                     {'product_id': product_id})
@@ -584,8 +643,14 @@ class OrderingService:
                 {'required_product_ids': required_ids, 'received_product_ids': sorted(seen)})
         return sorted(result, key=lambda item: item['product_id'])
 
-    def order_result(self, order_id, *, replayed):
-        order = db.session.get(Order, order_id)
+    def order_result(self, order_id, *, replayed, current_read=False):
+        # A competing transaction may have committed after our first consistent
+        # read. MySQL REPEATABLE READ requires a current read after the store lock.
+        if current_read:
+            order = db.session.execute(db.select(Order).where(Order.id == order_id)
+                .execution_options(populate_existing=True).with_for_update(read=True)).scalar_one_or_none()
+        else:
+            order = db.session.get(Order, order_id)
         if not order:
             raise DomainError('NOT_FOUND', '訂單不存在', 404)
         return {'order_id': order.id, 'number': order.number, 'status': order.status,

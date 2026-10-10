@@ -21,7 +21,9 @@ def token():
 @bp.post('/api/auth/login')
 @limiter.limit('5 per minute')
 def login():
-    data = request.get_json(silent=True) or request.form
+    data = request.get_json(silent=True) if request.is_json else request.form
+    if request.is_json and not isinstance(data, dict):
+        raise DomainError('INVALID_INPUT', '請提供包含帳號與密碼的資料物件', 400)
     username, password = data.get('username'), data.get('password')
     if not isinstance(username, str) or not isinstance(password, str) or len(password) > 1024:
         raise DomainError('INVALID_INPUT', '請輸入帳號與密碼', 400)
@@ -36,10 +38,13 @@ def login():
     return redirect(url_for('home'))
 
 
+@bp.post('/logout')
 @bp.post('/api/auth/logout')
 @require_role()
 def logout():
     session.clear()
+    if request.path == '/logout':
+        return redirect(url_for('auth.login_page'))
     return jsonify(ok=True)
 
 

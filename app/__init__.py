@@ -73,7 +73,19 @@ def create_app(overrides=None):
 
     @app.get('/')
     def home():
-        return render_template('home.html')
+        store, drafts, run = None, [], None
+        if g.user and g.user.role in ('manager', 'admin'):
+            from app.models import Store, OrderDraft
+            from app.modules.ordering.routes import latest_run
+            store = next((s for s in g.user.stores if s.active), None) if g.user.role == 'manager' else \
+                db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id)).scalars().first()
+            if store:
+                run = latest_run(store.id)
+                drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.user_id == g.user.id,
+                    OrderDraft.store_id == store.id, OrderDraft.status == 'DRAFT').order_by(
+                    OrderDraft.updated_at.desc()).limit(5)).scalars().all()
+        return render_template('home.html', store=store, drafts=drafts, run=run,
+            ordering_available='runs' in app.extensions['service_providers'])
 
     @app.get('/api/stores/<int:store_id>/context')
     @require_role()

@@ -2,7 +2,9 @@
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}統家便利店{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}"></head>
-<body><header><a href="/">統家便利店</a> · 補貨協作系統</header>
+<body><header class="site-header"><a href="/" class="site-brand">統家便利店<span>補貨協作系統</span></a>
+{% if current_user %}<div class="account-menu"><span class="account-name">{{ current_user.username }}</span><a href="/">回首頁</a>
+<form class="logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logout-button">登出</button></form></div>{% endif %}</header>
 {% if business_time %}<aside role="status">示範時間：{{ business_time.strftime('%Y-%m-%d %H:%M:%S %Z') }} · 合成資料／示範帳號，請勿共用正式帳號</aside>{% endif %}
 {% if module_dev %}<aside class="warning">模組開發模式 {{ module_dev }} · 使用測試供應者；非真實跨模組整合。來源見下方模組入口。</aside>{% endif %}
 <main>{% block content %}{% endblock %}</main></body></html>

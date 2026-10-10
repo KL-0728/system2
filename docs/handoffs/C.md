@@ -1,5 +1,11 @@
 # C 模組交接
 
+> 最新A補修：工作台及預覽排除先開確認視窗，取消／Esc不改值，確認設0與skip。一般調整原因依spec6.4選項即可，補充說明選填；預覽及決策明細顯示skip中文，避免誤標未調整。新增有CSRF的/logout表單入口；電腦五欄資料＋下排原因，工具列移至上方。MySQL79項／Node2項通過，Edge8項驗桌面三種寬度、平板、手機與登出。未改C分支或DTO、資料表，未提交推送；依[最新重測五步](../a-manual-testing.md)複核。
+
+> A後續補修：草稿run選擇、權限／時間邊界、草稿續作與未知送單恢復、鎖後刷新及併發重送已修，CSS與操作入口已更新。MySQL77項／Node2項通過，並完成真實Edge操作。C請依[最新人工實測](../a-manual-testing.md)複核；尤其`SPECIAL_NEED_REQUIRED`／`EXCLUSION_REQUIRES_EDIT`、分頁metadata與決策snapshot新增政策參數。基準ab704d9加A本機未提交修改，未改C分支。原交付紀錄如下。
+
+> 2026-10-10 A補充：PR #1已由使用者合併至main（ab704d9）。A在fix/a-c-order-validation另做排除／特殊需求補修，尚未提交；原C交付證據與A補修結果分開。請C核對新增錯誤碼、0量品項排除與前端返回重驗流程，見[本輪檢查](../project-review-2026-10-10.md)。以下是原C交付紀錄。
+
 不清楚下一步時先看[組員操作入口](../team-start.md)：C使用MODULE_DEV=C及manager1，依目前狀態取得啟動／實測／PR的指令；本模組進度仍以下表為準。
 
 - 任務：店長訂購及可靠送單；C01–C05 已完成本機實作、AI 自測及 C 組員人工實測。

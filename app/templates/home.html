@@ -1,5 +1,29 @@
-{% extends 'base.html' %}{% block content %}<h1>共用開發基礎</h1>
-{% if current_user %}<p>已登入：{{ current_user.username }}（{{ current_user.role }}）</p>
-<p>訂購、庫存與履約功能由各模組交付後開放。</p>
-{% if module_dev %}<p><a href="/modules/{{ module_dev|lower }}/">開啟 {{ module_dev }} 模組基礎檢查</a></p>{% endif %}
-{% else %}<p><a href="/login">登入示範環境</a></p>{% endif %}{% endblock %}
+{% extends 'base.html' %}
+{% block title %}門市首頁｜統家便利店{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ordering.css') }}">
+{% if current_user %}
+<h1>{{ store.name if store else '協作首頁' }}</h1>
+<p>已登入：{{ current_user.username }}。先調整數量，再核對本單，最後確認送出。</p>
+{% if store %}
+<div class="home-actions">
+  <section class="panel"><h2>今天的補貨</h2>
+    {% if ordering_available and run %}
+    <p>資料更新：<time data-local-time="{{ run.actual_generated_at.isoformat() }}Z">{{ run.actual_generated_at }}</time></p>
+    <a class="button-link" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">開始補貨</a>
+    {% else %}<p>補貨建議服務尚未備妥。請先完成資料準備。</p>{% endif %}
+  </section>
+  <section class="panel"><h2>查詢已送出的訂單</h2><p>查看訂量、特殊需求與確認紀錄。</p>
+    <a class="button-link secondary" href="{{ url_for('ordering.orders_page', store_id=store.id) }}">查看訂單</a></section>
+</div>
+<section class="panel"><h2>繼續未送出的草稿</h2>
+{% for draft in drafts %}<p class="draft-link"><span>草稿 #{{ draft.id }}</span>
+  <a href="{{ url_for('ordering.ordering_page', store_id=store.id, draft_id=draft.id) }}">繼續編輯</a></p>
+{% else %}<p>目前沒有未送出的草稿。</p>{% endfor %}
+</section>
+<section class="panel compact"><p>收貨、供貨待辦及正式庫存串接將於履約與庫存模組接入後開放。</p></section>
+{% else %}<p>請依團隊操作指南開啟對應角色的模組。</p>{% endif %}
+{% if module_dev %}<p><a href="/modules/{{ module_dev|lower }}/">{{ module_dev }} 模組資料檢查</a></p>{% endif %}
+{% else %}<h1>補貨協作系統</h1><p>登入後查看門市補貨與訂單。</p><a class="button-link" href="/login">登入示範環境</a>{% endif %}
+<script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
+{% endblock %}

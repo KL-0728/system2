@@ -3,5 +3,6 @@
 <nav class="store-nav"><a href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">補貨</a><a aria-current="page" href="{{ url_for('ordering.orders_page', store_id=store.id) }}">訂單</a><span aria-disabled="true">收貨</span></nav>
 <h1>訂單</h1><p>{{ store.code }} {{ store.name }}：原訂量、供貨狀態與送出時間。</p>
 <div id="orders-error" class="error-box" role="alert" hidden></div><div id="orders-list" class="order-list" data-store-id="{{ store.id }}"><p>載入中…</p></div>
+<nav id="orders-pagination" class="pagination" aria-label="訂單分頁"></nav>
 <script src="{{ url_for('static', filename='js/orders.js') }}" defer></script>
 {% endblock %}
