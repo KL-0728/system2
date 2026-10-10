@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}資料管理 · {{ store.name }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/inventory.css') }}">
+<div id="inventory-app" data-store-id="{{ store.id }}" data-actor-id="{{ actor_id }}">
+<div class="data-heading"><div><p class="eyebrow">{{ store.code }} · {{ store.name }}</p><h1>資料管理</h1>
+<p>先確認銷售入帳，再核對 21:00 實盤。所有數量以「件」計。</p></div>
+<a class="button-link" href="/store/replenishment?store_id={{ store.id }}">補貨計算</a></div>
+<nav class="data-nav" aria-label="資料管理區段"><a href="#stock-section">庫存狀況</a><a href="#sales-section">銷售匯入</a><a href="#count-section">盤點／修訂</a></nav>
+<p id="data-window">讀取庫存與時間基準中…</p>
+<p class="data-note">現貨為每日 21:00 帳面加已入帳的後續異動；21:00–22:00 銷售不拆算，並非即時 POS 庫存。</p>
+<div id="data-message" role="status" aria-live="polite" tabindex="-1"></div>
+<section id="recovery" class="data-panel attention" hidden><h2>提交結果尚未確認</h2>
+<p>保留原批次／盤點請求與內容。先用原請求重試，避免再次入帳；重新整理後仍可重試。</p>
+<button type="button" id="retry-pending">以原請求重試</button></section>
+<section id="stock-section" class="data-panel"><div class="panel-heading"><h2>庫存與入帳狀況</h2>
+<button id="refresh-status" type="button">重新核對</button></div>
+<div id="stock-items" class="stock-grid"></div></section>
+<div class="data-columns">
+<section id="sales-section" class="data-panel"><h2>銷售 CSV 匯入</h2>
+<p>整批驗證、整批提交。任何一列錯誤都不匯入。日常模式只扣一次；歷史模式不扣庫存。</p>
+<a href="/store/data/sample.csv?store_id={{ store.id }}">下載本店本日合成範例 CSV</a>
+<p class="data-note">範例飲料銷售2件、雨衣25件，其餘0；請核對資料後再提交。檔案上限512 KiB、2000列，UTF-8。</p>
+<form id="sales-form">
+<label for="sales-mode">匯入模式</label><select id="sales-mode"><option value="daily_posting">日常庫存入帳</option><option value="historical">歷史預測資料（不扣庫存）</option></select>
+<label for="sales-file">CSV 檔案</label><input id="sales-file" type="file" accept=".csv,text/csv" required>
+<label for="replacement-id">取代批次 ID（只在整批更正／歷史轉日常時填）</label>
+<input id="replacement-id" type="number" min="1" step="1" placeholder="從下方最近批次取得">
+<label for="sales-reason">更正理由（更正時必填）</label><textarea id="sales-reason" maxlength="500" rows="2"></textarea>
+<button type="submit" id="validate-sales">驗證整批</button></form>
+<div id="sales-preview" hidden><h3>提交前核對</h3><p id="sales-impact"></p>
+<ul id="sales-errors" class="error-list"></ul>
+<div id="preview-rows" class="preview-rows"></div>
+<button type="button" id="commit-sales" disabled>確認區間與庫存影響，提交整批</button></div>
+<button type="button" id="repeat-sales" hidden>以原批次重試核對</button>
+<h3>最近提交批次</h3><ul id="batch-list"></ul></section>
+<section id="count-section" class="data-panel"><h2>21:00 盤點／修訂</h2>
+<p>填寫 21:00 時實際持有的總量，包含不可販售量。截止後收貨不填入 21:00 實盤；提交只追加差額，保留後續異動。</p>
+<form id="count-form">
+<label for="count-product">商品</label><select id="count-product"></select>
+<label for="count-cutoff">實盤截止點（含時區）</label><input id="count-cutoff" type="text" required>
+<label for="count-physical">21:00 實體總量（件）</label><input id="count-physical" type="number" min="0" max="1000000" step="1" required>
+<label for="count-unsellable">21:00 不可販售量（件）</label><input id="count-unsellable" type="number" min="0" max="1000000" step="1" required>
+<label class="check-label" for="count-correction"><input id="count-correction" type="checkbox">明確修訂同截止點已提交的盤點</label>
+<p id="count-version"></p>
+<label for="count-reason">盤點／修訂理由</label><textarea id="count-reason" maxlength="500" required rows="2"></textarea>
+<button type="submit" id="submit-count">提交盤點差額</button></form>
+<button type="button" id="repeat-count" hidden>以原盤點請求重試核對</button>
+<p class="data-note">僅受理本日 21:00 實盤，於21:00–22:00提交；非21:00、缺日常入帳、舊版本或不合法數量將拒絕。合法修訂須勾選、填理由並核對最新版本。</p>
+</section></div>
+<template id="stock-card"><article class="stock-card"><h3 data-text="title"></h3>
+<p data-text="book"></p><p data-text="counted"></p><p data-text="sales"></p>
+<p data-text="integrity" class="integrity"></p><ul data-text="tasks"></ul></article></template>
+</div>
+<script src="{{ url_for('static', filename='js/inventory.js') }}" defer></script>
+{% endblock %}

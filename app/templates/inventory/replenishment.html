@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}補貨計算 · {{ store.name }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/replenishment.css') }}">
+<div id="replenishment-app" data-store-id="{{ store.id }}">
+<div class="run-heading"><div><p>{{ store.code }} · {{ store.name }}</p><h1>補貨計算</h1>
+<p>七日需求與庫存來源，逐項核對建議及到貨風險。所有數量以件計。</p></div>
+<a href="/store/data?store_id={{ store.id }}">銷售／盤點資料</a></div>
+<p id="run-window">讀取本輪基準中…</p><p id="run-provider"></p>
+<p id="run-message" role="status" aria-live="polite" tabindex="-1"></p>
+<section class="run-panel"><h2>本輪計算</h2>
+<label for="run-cycle">配送輪次</label><select id="run-cycle"></select>
+<button type="button" id="generate-run">產生並保存計算快照</button>
+<button type="button" id="refresh-run-context">重新核對版本</button>
+<p>基準固定本日21:00；產生時間另行保存。保護期間為 1＋到貨天數。建議量向上取整箱，0仍為0。</p>
+<label for="saved-run">已保存快照（最多最近30筆）</label><select id="saved-run"></select>
+<button type="button" id="load-run">讀取原快照</button>
+</section>
+<section class="run-panel" id="run-result" hidden><h2 id="run-title"></h2><p id="run-metadata"></p>
+<p id="run-view-kind">目前顯示保存快照。</p>
+<div id="run-items"></div>
+<button type="button" id="evaluate-run">依上方輪次與各品項最終量試算</button>
+<p>試算不建立訂單、不異動庫存，也不覆寫原快照。正式草稿／確認／送單由訂購流程處理。</p>
+</section>
+</div>
+<script defer src="{{ url_for('static', filename='js/replenishment.js') }}"></script>
+{% endblock %}
