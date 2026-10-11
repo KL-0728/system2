@@ -106,6 +106,14 @@ def run():
                 'One count master, two immutable revisions')
             check(service.get_integrity(store_id=store.id, product_id=row.product_id,
                 baseline_at=b, session=db.session).h == 31, 'Usable H=31')
+            before = (row.book_physical_qty, row.version, store.calculation_version)
+            for index, at in enumerate((b - timedelta(minutes=10), b)):
+                conflict('COUNT_COVERED_MOVEMENT', lambda at=at, index=index:
+                    service.apply_movement(mutation=InventoryMutation(store.id, row.product_id,
+                        'receipt', f'manual:late:{index}', 10, 0, row.version, actor.id, at,
+                        'Late receipt covered by count'), session=db.session))
+                check((row.book_physical_qty, row.version, store.calculation_version) == before,
+                    'Rejected pre-count receipt leaves book and versions unchanged')
             daily_input(service, negative, actor, b, 25, 'manual:negative')
             blocked = service.get_integrity(store_id=store.id, product_id=negative.product_id,
                 baseline_at=b, session=db.session)
@@ -114,6 +122,18 @@ def run():
                 InventoryReconciliation.status == 'OPEN'))
             check(negative.book_physical_qty == -5 and blocked.h is None and not blocked.usable and open_tasks == 1,
                 'Negative book=-5 is preserved, reconciliation OPEN, H=null')
+            service.apply_movement(mutation=InventoryMutation(store.id, negative.product_id,
+                'sales', 'manual:negative:more', -1, 0, negative.version, actor.id,
+                business_now(), 'Second synthetic negative sale'), session=db.session)
+            service.apply_movement(mutation=InventoryMutation(store.id, negative.product_id,
+                'receipt', 'manual:negative:receipt', 1, 0, negative.version, actor.id,
+                business_now(), 'Synthetic receipt while reconciliation open'), session=db.session)
+            open_tasks = db.session.scalar(db.select(db.func.count(InventoryReconciliation.id)).where(
+                InventoryReconciliation.store_id == store.id,
+                InventoryReconciliation.product_id == negative.product_id,
+                InventoryReconciliation.status == 'OPEN'))
+            check(negative.book_physical_qty == -5 and open_tasks == 1,
+                'Repeated negative movements keep one OPEN reconciliation case')
             missing = service.get_integrity(store_id=store.id, product_id=row.product_id,
                 baseline_at=b + timedelta(days=1), session=db.session)
             check(missing.missing_dates == ('2026-10-09',) and missing.h is None,

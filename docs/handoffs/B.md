@@ -1,6 +1,31 @@
 # B 模組交接
 
-本次只授權 **B03**，沿用已提交的B01／B02。B03已實作及自測，完成後停止；不進B04、不commit、不push、不開PR、不合併main。現在請B依[B03畫面核對指南](../b03-manual-testing.md)實測；以下AI證據不代填人工或產品驗收通過。
+## 2026-10-11 B01 更正（本次）
+
+本次只處理 B01。feat/b-module 開工乾淨；fetch 與本分支 pull --ff-only 成功，HEAD／個人上游 2735faa，origin/main f2d5f67 已在本分支歷史中。B02／B03 已有先前提交，本次未改其程式；不 commit、不 push、不開 PR、不合併 main。
+
+改動：app/services/inventory.py 對新異動的 occurred_at ≤ Inventory.counted_at（count_revision 除外）在門市與庫存鎖內回 COUNT_COVERED_MOVEMENT／409，無庫存、版本、來源或稽核寫入；同來源既有成功結果先依冪等規則回傳。前次盤點後、本次盤點前的正常日常銷售仍可入帳。負帳面同商品只保留最早一筆 negative_book OPEN 對帳案件；後續異動沿用，若舊資料已有重複 OPEN，將其餘結案並記錄合併目標。B02 的完整對帳待辦操作仍按既有分工處理。
+
+tests/test_inventory.py 新增兩個 MySQL 案例：盤點後補登20:50或21:00收貨+10皆409且帳面20、版本／異動／稽核數不變；盤點前日常銷售與已成功來源重送仍有效。負帳面連續銷售與收貨只有一筆 OPEN，更正後零筆 OPEN。調整既有測試時鐘，使A03種子已盤點後的正常收貨發生於21:01。tests/manual_inventory.py 也加入兩種409及一筆OPEN的數字核對。
+
+環境：本 checkout 無 .env；使用既有、Git忽略的 instance/b01-test-env.ps1 與 B 專用 MySQL 127.0.0.1:3308。未建立／重設 DB、未套新 migration。scripts/check_environment.py 前後 demo／test 均 PASS，head 884e7a53a8c8。測試使用合成 manager1／DEMO1、2026-10-08 21:00 Asia/Taipei 時鐘與正式 B 服務；沒有真實 D 收貨、B02 CSV 或瀏覽器人工驗收。
+
+本次在專案根目錄實際執行：
+
+~~~powershell
+. .\instance\b01-test-env.ps1
+.\.venv\Scripts\python.exe scripts/check_environment.py
+.\.venv\Scripts\python.exe -m pytest tests/test_inventory.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe tests/manual_inventory.py
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+git diff --check
+~~~
+
+結果：B01 MySQL 44 passed in 26.64s；manual_inventory.py 的正常、409、單一OPEN及36張表回滾檢查全PASS；diff檢查PASS。全套為 221 passed、2 failed in 231.54s，沒有 warnings summary；不宣稱全套通過。兩項失敗是 tests/test_contracts.py::test_independent_module_boot[C-expected1]（共用C開發頁422，舊測試期待200）與 tests/test_contracts.py::test_no_silent_fallback（正式runs已註冊，舊測試仍期待缺服務錯誤），均為前次B03已記錄的共用測試前提。本次不改A／C／D或凍結測試。
+
+現在請B核對本次四個檔案的差異；需要自行重跑時，先在同一隔離B test DB載入私有腳本，再執行上述命令。預期 B01 44 passed、manual PASS；全套仍有上述兩個共用失敗，直到A協調修正。失敗請回報命令、HEAD、git status、實際／預期差異、錯誤訊息及warnings summary，勿貼憑證。可貼聊天下一句：「我是B，已核對B01更正，請停在B01等我指示。」
+
+## Earlier B03 handoff (historical)
 
 - 分支：feat/b-module；開工乾淨；git fetch origin --tags、git pull --ff-only成功（Already up to date）。
 - 遠端：https://github.com/KL-0728/system2；HEAD／個人上游 5ca02631e02212826d2e923d30fb1c11077f14a0（b2 complete）。B01 a139a7a及B02由組員先前提交／推送，本次AI未執行發布。

@@ -152,6 +152,9 @@ class InventoryService:
         now = _business_now(session)
         if mutation.occurred_at > now:
             raise DomainError('INVALID_TIME', '庫存異動時間不得晚於業務時間')
+        if (mutation.source_type != 'count_revision'
+                and mutation.occurred_at <= aware(row.counted_at)):
+            raise DomainError('COUNT_COVERED_MOVEMENT', '該異動時間已由盤點涵蓋，請先對帳', 409)
         if row.version != mutation.expected_version:
             raise DomainError('VERSION_CONFLICT', '庫存版本衝突，請重新核對', 409,
                 {'current_version': row.version})
@@ -179,15 +182,27 @@ class InventoryService:
             applied_at=utc_naive(now), resulting_version=row.version)
         session.add(movement)
         session.flush()
+        pending = session.execute(db.select(InventoryReconciliation).where(
+            InventoryReconciliation.store_id == store.id,
+            InventoryReconciliation.product_id == row.product_id,
+            InventoryReconciliation.source_type == 'negative_book',
+            InventoryReconciliation.status == 'OPEN')
+            .order_by(InventoryReconciliation.id).with_for_update()).scalars().all()
         if row.reconciliation_required:
-            session.add(InventoryReconciliation(store_id=store.id, product_id=row.product_id,
-                source_type='negative_book', source_id=f'movement:{movement.id}',
-                reason='帳面可售量為負，須有效盤點或更正', status='OPEN', created_at=utc_naive(now)))
+            if not pending:
+                session.add(InventoryReconciliation(store_id=store.id, product_id=row.product_id,
+                    source_type='negative_book', source_id=f'movement:{movement.id}',
+                    reason='帳面可售量為負，須有效盤點或更正', status='OPEN', created_at=utc_naive(now)))
+            else:
+                # Keep the first case; clean up any duplicates from older writes.
+                for duplicate in pending[1:]:
+                    duplicate.status = 'RESOLVED'
+                    duplicate.resolved_at = utc_naive(now)
+                    duplicate.resolved_by = mutation.actor_id
+                    duplicate.version += 1
+                    duplicate.resolution = {'consolidated_into': pending[0].id,
+                        'movement_id': movement.id}
         else:
-            pending = session.execute(db.select(InventoryReconciliation).where(
-                InventoryReconciliation.store_id == store.id, InventoryReconciliation.product_id == row.product_id,
-                InventoryReconciliation.source_type == 'negative_book', InventoryReconciliation.status == 'OPEN')
-                .with_for_update()).scalars()
             for task in pending:
                 task.status, task.resolved_at, task.resolved_by = 'RESOLVED', utc_naive(now), mutation.actor_id
                 task.version += 1

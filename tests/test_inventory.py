@@ -27,7 +27,12 @@ def case(seeded):
     actor = db.session.execute(select(User).where(User.username == 'manager1')).scalar_one()
     inventory = db.session.execute(select(Inventory).where(Inventory.store_id == store.id)
         .order_by(Inventory.product_id)).scalars().first()
-    return InventoryService(), store, actor, inventory, business_now()
+    b = business_now()
+    # A03 seed already contains a checked 21:00 count. New receipts occur after it.
+    clock = db.session.get(BusinessClock, 1)
+    clock.business_anchor = utc_naive(b + timedelta(minutes=1))
+    db.session.flush()
+    return InventoryService(), store, actor, inventory, b
 
 
 def move(case, *, source='receipt', key='receipt:1', physical=10, damaged=0, at=None, version=None):
@@ -131,7 +136,7 @@ def test_stale_version_authorization_and_invalid_time_no_write(case):
         mutation=replace(mutation, actor_id=other.id), session=db.session))
     error('INVALID_TIME', lambda: service.apply_movement(
         mutation=replace(mutation, source_id='future', expected_version=row.version,
-            occurred_at=b + timedelta(seconds=1)), session=db.session))
+            occurred_at=business_now() + timedelta(seconds=1)), session=db.session))
     assert row.book_physical_qty == 30 and db.session.scalar(select(func.count(InventoryMovement.id))) == 1
 
 
@@ -139,6 +144,56 @@ def test_stale_version_authorization_and_invalid_time_no_write(case):
 def test_invalid_non_sales_book_rejected(case, physical, damaged):
     error('INVALID_QUANTITY', lambda: move(case, physical=physical, damaged=damaged))
     assert case[3].book_physical_qty == 20
+
+
+def test_counted_cutoff_rejects_late_receipt_and_preserves_prior_daily_replay(case):
+    service, store, actor, row, b = case
+    daily = post_daily(case, sold=0)
+    advance(b, 20)
+    count = service.submit_count(**count_args(case))
+    assert count.movement.physical_book == 20 and row.counted_at == utc_naive(b)
+    before = (row.book_physical_qty, row.version, store.calculation_version,
+        db.session.scalar(select(func.count(InventoryMovement.id))),
+        db.session.scalar(select(func.count(AuditEvent.id))))
+    for index, at in enumerate((b - timedelta(minutes=10), b)):
+        mutation = InventoryMutation(store.id, row.product_id, 'receipt',
+            f'late:receipt:{index}', 10, 0, row.version, actor.id, at,
+            'Late receipt already covered by physical count')
+        exc = error('COUNT_COVERED_MOVEMENT',
+            lambda: service.apply_movement(mutation=mutation, session=db.session))
+        assert exc.status == 409
+        assert (row.book_physical_qty, row.version, store.calculation_version,
+            db.session.scalar(select(func.count(InventoryMovement.id))),
+            db.session.scalar(select(func.count(AuditEvent.id)))) == before
+    # A successful source replay must still return its original result after the count.
+    original = db.session.get(InventoryMovement, daily.movement_id)
+    replay = service.apply_movement(mutation=InventoryMutation(store.id, row.product_id,
+        original.source_type, original.source_id, original.physical_delta,
+        original.unsellable_delta, original.resulting_version - 1, actor.id, b,
+        original.reason), session=db.session)
+    assert replay.replayed and row.book_physical_qty == 20
+
+
+def test_negative_book_keeps_one_open_reconciliation(case):
+    service, store, actor, row, b = case
+    post_daily(case, sold=25)
+    advance(b, 10)
+    move(case, source='sales', key='sales:extra', physical=-1)
+    move(case, key='receipt:still-negative', physical=2)
+    pending = db.session.execute(select(InventoryReconciliation).where(
+        InventoryReconciliation.store_id == store.id,
+        InventoryReconciliation.product_id == row.product_id,
+        InventoryReconciliation.source_type == 'negative_book',
+        InventoryReconciliation.status == 'OPEN')).scalars().all()
+    assert row.book_physical_qty == -4 and row.reconciliation_required
+    assert len(pending) == 1
+    move(case, source='sales_correction', key='sales:corrected', physical=5)
+    assert row.book_physical_qty == 1 and not row.reconciliation_required
+    assert pending[0].status == 'RESOLVED'
+    assert db.session.scalar(select(func.count(InventoryReconciliation.id)).where(
+        InventoryReconciliation.store_id == store.id,
+        InventoryReconciliation.product_id == row.product_id,
+        InventoryReconciliation.status == 'OPEN')) == 0
 
 
 def test_writer_and_count_rollback_with_outer_transaction(case):
