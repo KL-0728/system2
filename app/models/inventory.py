@@ -1,3 +1,5 @@
+from sqlalchemy import event, inspect
+from app.services.errors import DomainError
 from app.extensions import db
 from .common import Entity, StoreItem, Versioned
 
@@ -75,3 +77,21 @@ class InventoryReconciliation(StoreItem, Versioned, db.Model):
     resolved_at = db.Column(db.DateTime)
     resolved_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     resolution = db.Column(db.JSON)
+
+
+# Count identity and its original 21:00 book baseline never change on revision.
+
+
+@event.listens_for(InventoryCount, 'before_update')
+def protect_count_baseline(mapper, connection, target):
+    state = inspect(target)
+    fields = ('store_id', 'product_id', 'cutoff_at', 'baseline_physical_qty', 'baseline_unsellable_qty')
+    if any(state.attrs[field].history.has_changes() for field in fields):
+        raise DomainError('IMMUTABLE_RECORD', '盤點原始帳面基準不得覆寫；請新增修訂', 409)
+
+
+@event.listens_for(InventoryCount, 'before_delete')
+@event.listens_for(CountSubmissionKey, 'before_delete')
+@event.listens_for(CountSubmissionKey, 'before_update')
+def protect_count_source(mapper, connection, target):
+    raise DomainError('IMMUTABLE_RECORD', '盤點主紀錄與冪等來源不得改寫或刪除', 409)

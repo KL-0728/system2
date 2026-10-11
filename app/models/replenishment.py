@@ -42,3 +42,12 @@ class RunItem(Entity, db.Model):
     input_snapshot = db.Column(db.JSON, nullable=False)
     output_snapshot = db.Column(db.JSON, nullable=False)
     warnings = db.Column(db.JSON, nullable=False)
+
+# Manual revisions are append-only; new values never overwrite an earlier reference.
+from sqlalchemy import event
+from app.services.errors import DomainError
+
+@event.listens_for(ManualForecastOverride, "before_update")
+@event.listens_for(ManualForecastOverride, "before_delete")
+def protect_manual_forecast(mapper, connection, target):
+    raise DomainError("IMMUTABLE_RECORD", "人工預測歷史不得覆寫；請保存新修訂", 409)
