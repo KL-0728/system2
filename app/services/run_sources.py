@@ -27,7 +27,7 @@ def latest_run(store_id, *, session=None):
     session = session if session is not None else db.session
     return session.execute(db.select(ReplenishmentRun).where(
         ReplenishmentRun.store_id == store_id, run_source_filter()).order_by(
-        ReplenishmentRun.actual_generated_at.desc(), ReplenishmentRun.id.desc())).scalars().first()
+        ReplenishmentRun.actual_generated_at.desc(), ReplenishmentRun.id.desc()).limit(1)).scalar_one_or_none()
 
 
 def run_source_available(run_id, store_id, *, session=None):

@@ -7,4 +7,4 @@
 <form class="logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logout-button">登出</button></form></div>{% endif %}</header>
 {% if business_time %}<aside role="status">示範時間：{{ business_time.strftime('%Y-%m-%d %H:%M:%S %Z') }} · 合成資料／示範帳號，請勿共用正式帳號</aside>{% endif %}
 {% if module_dev %}<aside class="warning">模組開發模式 {{ module_dev }} · 非真實跨模組整合。實際服務與資料來源見模組檢查頁。</aside>{% endif %}
-<main>{% block content %}{% endblock %}</main></body></html>
+<main>{% if store is defined and store %}{% include 'store/_nav.html' %}{% endif %}{% block content %}{% endblock %}</main></body></html>

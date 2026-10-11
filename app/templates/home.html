@@ -11,6 +11,8 @@
     {% if ordering_available and run %}
     <p>資料更新：<time data-local-time="{{ run.actual_generated_at.isoformat() }}Z">{{ run.actual_generated_at }}</time></p>
     <a class="button-link" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">開始補貨</a>
+    {% elif ordering_available %}<p>本店尚無可用建議。先核對銷售與庫存，再產生本輪補貨建議。</p>
+    <a class="button-link" href="{{ url_for('inventory.replenishment_page', store_id=store.id) }}">準備補貨建議</a>
     {% else %}<p>補貨建議服務尚未備妥。請先完成資料準備。</p>{% endif %}
   </section>
   <section class="panel"><h2>查詢已送出的訂單</h2><p>查看訂量、特殊需求與確認紀錄。</p>
@@ -21,7 +23,7 @@
   <a href="{{ url_for('ordering.ordering_page', store_id=store.id, draft_id=draft.id) }}">繼續編輯</a></p>
 {% else %}<p>目前沒有未送出的草稿。</p>{% endfor %}
 </section>
-<section class="panel compact"><p>收貨、供貨待辦及正式庫存串接將於履約與庫存模組接入後開放。</p></section>
+<section class="panel compact"><p>銷售、盤點與補貨計算已開放；收貨與供貨待辦待履約模組接入後開放。</p></section>
 {% else %}<p>請依團隊操作指南開啟對應角色的模組。</p>{% endif %}
 {% if module_dev %}<p><a href="/modules/{{ module_dev|lower }}/">{{ module_dev }} 模組資料檢查</a></p>{% endif %}
 {% else %}<h1>補貨協作系統</h1><p>登入後查看門市補貨與訂單。</p><a class="button-link" href="/login">登入示範環境</a>{% endif %}

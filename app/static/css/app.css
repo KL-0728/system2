@@ -27,6 +27,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 h1, h2, h3 { line-height: 1.35; }
 h1 { font-size: clamp(1.6rem, 2.8vw, 2rem); letter-spacing: -.02em; }
 h2 { font-size: 1.2rem; }
+.store-nav { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: 1.5rem; padding: .25rem; background: #ECE9F3; border-radius: .7rem; width: fit-content; max-width: 100%; }
+.store-nav a, .store-nav span { padding: .5rem 1.25rem; border-radius: .5rem; text-decoration: none; white-space: nowrap; font-size: .9rem; }
+.store-nav [aria-current=page] { background: white; color: var(--accent); font-weight: 700; box-shadow: 0 1px 4px #28203612; }
+.store-nav [aria-disabled=true] { opacity: .65; }
 @media (max-width: 600px) {
   main { padding: 1rem .85rem 2rem; }
   .site-header { padding: .8rem 1rem; flex-wrap: wrap; gap: .65rem; }

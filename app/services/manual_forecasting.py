@@ -51,16 +51,46 @@ def configured_product(session, store_id, product_id):
         raise DomainError('INVALID_POLICY', '商品政策不一致', 409)
     return result
 
-def latest_reference(session, store_id, product_id, now):
-    row = session.execute(db.select(ManualForecastOverride).where(
-        ManualForecastOverride.store_id == store_id, ManualForecastOverride.product_id == product_id)
-        .order_by(ManualForecastOverride.created_at.desc(), ManualForecastOverride.id.desc())
-        .execution_options(populate_existing=True).with_for_update(read=True)).scalars().first()
+def _reference(row, now):
     if row is None:
         return None
     return dict(override_id=row.id, daily_demand=format(row.daily_demand, 'f'), reason=row.reason,
         actor_id=row.actor_id, version=row.version, created_at=aware(row.created_at).isoformat(),
         valid_until=aware(row.valid_until).isoformat(), expired=aware(row.valid_until) <= now)
+
+
+def latest_reference(session, store_id, product_id, now):
+    row = session.execute(db.select(ManualForecastOverride).where(
+        ManualForecastOverride.store_id == store_id, ManualForecastOverride.product_id == product_id)
+        .order_by(ManualForecastOverride.created_at.desc(), ManualForecastOverride.id.desc())
+        .limit(1).execution_options(populate_existing=True).with_for_update(read=True)).scalar_one_or_none()
+    return _reference(row, now)
+
+
+def forecast_inputs(session, store_id, product_ids, baseline, now):
+    """Read the fixed seven days and latest references once under the caller's store lock."""
+    ids = sorted(product_ids)
+    sales = {pid: [] for pid in ids}
+    if not ids:
+        return sales, {}
+    rows = session.execute(db.select(SalesDaily).where(SalesDaily.store_id == store_id,
+        SalesDaily.product_id.in_(ids), SalesDaily.business_date.between(
+            (baseline - timedelta(days=6)).astimezone(TAIPEI).date(), baseline.astimezone(TAIPEI).date()))
+        .order_by(SalesDaily.product_id, SalesDaily.business_date)
+        .execution_options(populate_existing=True).with_for_update(read=True)).scalars()
+    for row in rows:
+        sales[row.product_id].append(row)
+    # Rank before joining the model so only the latest row per product is loaded.
+    ranked = db.select(ManualForecastOverride.id, db.func.row_number().over(
+        partition_by=ManualForecastOverride.product_id,
+        order_by=(ManualForecastOverride.created_at.desc(), ManualForecastOverride.id.desc())).label('position'))\
+        .where(ManualForecastOverride.store_id == store_id,
+            ManualForecastOverride.product_id.in_(ids)).subquery()
+    references = session.execute(db.select(ManualForecastOverride).join(ranked,
+        ranked.c.id == ManualForecastOverride.id).where(ranked.c.position == 1)
+        .order_by(ManualForecastOverride.product_id)
+        .execution_options(populate_existing=True).with_for_update(read=True)).scalars()
+    return sales, {row.product_id: _reference(row, now) for row in references}
 
 class ManualForecastService:
     def save(self, *, store_id, product_id, actor_id, daily_demand, reason, expected_version, session):
@@ -137,14 +167,12 @@ class ManualForecastService:
         rows = session.execute(db.select(StoreProduct, Product).join(Product, Product.id==StoreProduct.product_id)
             .where(StoreProduct.store_id==store_id, StoreProduct.active.is_(True), Product.active.is_(True))
             .order_by(Product.id)).all()
+        sales_by_product, references = forecast_inputs(session, store_id,
+            [product.id for sp, product in rows], b, now)
         result=[]
         for sp, product in rows:
-            reference = latest_reference(session, store_id, product.id, now)
-            sales = session.execute(db.select(SalesDaily).where(SalesDaily.store_id==store_id,
-                SalesDaily.product_id==product.id, SalesDaily.business_date.between(
-                    (b-timedelta(days=6)).astimezone(TAIPEI).date(),b.astimezone(TAIPEI).date()))
-                .order_by(SalesDaily.business_date).execution_options(populate_existing=True)
-                .with_for_update(read=True)).scalars().all()
+            reference = references.get(product.id)
+            sales = sales_by_product[product.id]
             valid = len(sales)==7 and all(s.is_open is True and s.was_stockout is False
                 and s.interval_end==utc_naive(round_window(aware(s.interval_end))[0])
                 and s.interval_start==s.interval_end-timedelta(days=1)

@@ -11,16 +11,18 @@
 <section class="run-panel"><h2>本輪計算</h2>
 <label for="run-cycle">配送輪次</label><select id="run-cycle"></select>
 <details class="forecast-choices"><summary>計算模式／人工值／歷史註記</summary><p>人工日需求與最終訂量是不同操作。有效值每輪主動確認；過期值僅作參考。庫存缺口或負帳面仍須先處理。</p><div id="forecast-options"></div></details>
-<button type="button" id="generate-run">產生並保存計算快照</button>
-<button type="button" id="refresh-run-context">重新核對版本</button>
+<button type="button" id="generate-run" disabled>產生並保存計算快照</button>
+<button type="button" id="refresh-run-context" disabled>重新核對版本</button>
 <p>基準固定本日21:00；產生時間另行保存。保護期間為 1＋到貨天數。建議量向上取整箱，0仍為0。</p>
 <label for="saved-run">已保存快照（最多最近30筆）</label><select id="saved-run"></select>
-<button type="button" id="load-run">讀取原快照</button>
+<button type="button" id="load-run" disabled>讀取原快照</button>
 </section>
 <section class="run-panel" id="run-result" hidden><h2 id="run-title"></h2><p id="run-metadata"></p>
+<a class="button-link" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">使用最新建議訂購</a>
+<p class="data-note">訂購工作台使用最新保存的建議；本頁試算修改不會自動帶入草稿，請在工作台核對最終量。</p>
 <p id="run-view-kind">目前顯示保存快照。</p>
 <div id="run-items"></div>
-<button type="button" id="evaluate-run">依上方輪次與各品項最終量試算</button>
+<button type="button" id="evaluate-run" disabled>依上方輪次與各品項最終量試算</button>
 <p>試算不建立訂單、不異動庫存，也不覆寫原快照。正式草稿／確認／送單由訂購流程處理。</p>
 </section>
 </div>
