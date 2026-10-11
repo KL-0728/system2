@@ -10,7 +10,7 @@
     return data;
   }
   const statusLabel = (status) => ({
-    SUBMITTED: '已送出', PENDING: '待處理', CONFIRMED: '已確認',
+    SUBMITTED: '待統家接單', PENDING: '待處理', CONFIRMED: '已確認',
     PARTIAL: '部分供貨', FULFILLED: '已完成', CANCELLED: '已取消',
   }[status] || '狀態已更新');
   const timeLabel = (value) => value ? new Date(value).toLocaleString('zh-TW', {timeZone: 'Asia/Taipei', hour12: false}) : '尚未提供';

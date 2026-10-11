@@ -8,10 +8,10 @@ from flask import current_app
 from app.contracts import (OpenOrdersDTO, OpenSourceDTO, RunDTO, RunItemDTO, WarningDTO,
                            dto_dict, quantity, require_utc)
 from app.extensions import db
-from app.models import (Store, User, Product, StoreProduct, PolicyVersion, DeliveryCycle,
-                        SalesDaily, Inventory, ReplenishmentRun, RunItem)
+from app.models import (Store, Product, StoreProduct, PolicyVersion, DeliveryCycle,
+                        ReplenishmentRun, RunItem)
 from app.providers import get_provider
-from app.services.manual_forecasting import latest_reference
+from app.services.manual_forecasting import forecast_inputs
 from app.services.clock import aware, utc_naive, round_window, TAIPEI
 from app.services.errors import DomainError
 from app.services.inventory import _lock_store, _authorize, _business_now, _audit
@@ -277,6 +277,7 @@ class ReplenishmentService:
         integrity = {pid: get_provider('integrity').get_integrity(store_id=store.id, product_id=pid,
                         baseline_at=baseline, session=session) for pid in sorted(ids)}
         sources = _sources(session, store, baseline, end, now, ids)
+        sales_by_product, references = forecast_inputs(session, store.id, ids, baseline, now)
         items = []
         latest = []
         for sp, product, policy in configured:
@@ -293,12 +294,7 @@ class ReplenishmentService:
             state = integrity[product.id]
             if (state.store_id, state.product_id, state.store_version) != (store.id, product.id, store.calculation_version):
                 raise DomainError('PROVIDER_MISMATCH', '庫存提供者門市／商品／版本不一致', 409)
-            sales = session.execute(db.select(SalesDaily).where(SalesDaily.store_id == store.id,
-                SalesDaily.product_id == product.id,
-                SalesDaily.business_date.between((baseline - timedelta(days=6)).astimezone(TAIPEI).date(),
-                    baseline.astimezone(TAIPEI).date()))
-                .order_by(SalesDaily.business_date).execution_options(populate_existing=True)
-                .with_for_update(read=True)).scalars().all()
+            sales = sales_by_product[product.id]
             by_day = {row.business_date: row for row in sales}
             window, invalid, total = [], [], 0
             for days in range(6, -1, -1):
@@ -333,7 +329,7 @@ class ReplenishmentService:
                 forecast_quality=dict(valid=not invalid, invalid_days=invalid), integrity=_json(dto_dict(state)),
                 policy_version_id=policy.id, policy_version=policy.version, policy_parameters=params,
                 requested_mode=modes.get(product.id,'model'),
-                manual_forecast=latest_reference(session,store.id,product.id,now),
+                manual_forecast=references.get(product.id),
                 special_need=copy.deepcopy(special_needs.get(product.id)),
                 direct_quantity=direct_quantities.get(product.id), source_provider=dict(name=type(get_provider('open_orders')).__name__,
                     test_only=current_app.extensions['service_providers']['open_orders'][1]))

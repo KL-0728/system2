@@ -6,6 +6,7 @@ from app.models import DeliveryCycle, ReplenishmentRun
 from app.services.access import require_role
 from app.services.clock import aware, round_window
 from app.services.errors import DomainError
+from app.services.forecasting import MODEL_VERSION
 from app.services.inventory import _business_now
 from app.services.replenishment import ReplenishmentService, authorize
 from app.services.manual_forecasting import ManualForecastService
@@ -78,7 +79,8 @@ def register_replenishment(bp):
             cycles = db.session.execute(db.select(DeliveryCycle).where(DeliveryCycle.store_id == store.id,
                 DeliveryCycle.baseline_at == b.replace(tzinfo=None), DeliveryCycle.cancelled.is_(False))
                 .order_by(DeliveryCycle.arrival_at)).scalars().all()
-            runs = db.session.execute(db.select(ReplenishmentRun).where(ReplenishmentRun.store_id == store.id)
+            runs = db.session.execute(db.select(ReplenishmentRun).where(ReplenishmentRun.store_id == store.id,
+                ReplenishmentRun.model_version == MODEL_VERSION)
                 .order_by(ReplenishmentRun.id.desc()).limit(30)).scalars().all()
             from flask import current_app
             provider = current_app.extensions['service_providers'].get('open_orders')

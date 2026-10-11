@@ -4,6 +4,8 @@
 
 **B／C來源修正、獨立正式快照示範與D接入防護**見[提供者整合與實測](docs/provider-integration.md)。舊受控草稿保留並提示重建；沒有正式快照時先準備補貨建議。`prepare-ordering-demo`只新增獨立BCDEMO，不重設既有資料。
 
+**2026-10-11全專案檢查與優化**見[檢查與操作步驟](docs/project-review-2026-10-11.md)：首頁可準備建議、共用門市選單、計算後返回訂購，以及批次查詢與相容快照列表。任務目前狀態見[任務總覽](docs/tasks.md)；下方A03段落保留共用基礎的原開工程序。
+
 **A本次補修的預覽與測試請看[逐步操作指南](docs/a-manual-testing.md)**。網站需Flask＋MySQL，不能只用Live Server打開HTML。
 
 **組員先看[操作入口：現在要做什麼](docs/team-start.md)**：包含首次安裝、每日啟動、示範帳密、跨店檢查圖例、錯誤判讀，以及各狀態可直接貼給Codex的下一句。下文保留環境與技術細節。
@@ -137,7 +139,7 @@ git switch -c feat/b-module
 | 成員 | 分支 | MODULE_DEV | 登入身份 | 基礎檢查 URL | 外部供應者替身 |
 | --- | --- | --- | --- | --- | --- |
 | B | feat/b-module | B | manager1 | http://127.0.0.1:5000/modules/b/ | D 未結來源 |
-| C | feat/c-module | C | manager1 | http://127.0.0.1:5000/modules/c/ | B run／完整性、D 未結／履約 |
+| C | feat/c-module | C | manager1 | http://127.0.0.1:5000/modules/c/ | D 未結／履約；B已接入正式服務 |
 | D | feat/d-module | D | operator；收貨用 manager1 | http://127.0.0.1:5000/modules/d/ | B 庫存寫入、C 訂單工廠 |
 
 以 C 為例，B／D 替換兩處字母：
@@ -161,7 +163,7 @@ Remove-Item Env:MODULE_DEV -ErrorAction SilentlyContinue
 Remove-Item Env:APP_ENV
 ```
 
-check_module 只用 Flask HTTP 測試客戶端，並非瀏覽器人工實測。C 的 seed-module 建立持久化受控 run／run_items，頁面列實際 ID，可供真實 C 草稿外鍵使用；D 建立明示 fixture_only 的測試訂單；兩者不代表 B 計算或 C 正式送單成功。B 自行實作真實庫存／計算，C 自行實作確認／送單，D 自行實作履約，另一人尚未合併不影響自己繼續01→05。
+check_module 只用 Flask HTTP 測試客戶端，並非瀏覽器人工實測。C的seed-module只有在使用受控run提供者時才建立受控快照；目前正式B已接入，不會追加受控run。可使用prepare-ordering-demo新增獨立正式B案例，詳見提供者整合指南。D建立明示fixture_only的測試訂單，不代表C正式送單成功。各模組自行完成真實業務服務，另一人尚未合併不影響自己繼續01→05。
 
 人工核對：登入後進入自己模組 URL → 顯示「非真實跨模組整合」及來源；C 飲料受控建議為30件、mu=20，direct 案例則為 null；D 顯示 FIXTURE 訂單原訂量30。錯誤路徑：開未啟用模組 URL →404；一般 demo 移除 MODULE_DEV 後替身入口404，未註冊服務503；禁止將開發替身當正式服務。API／DTO 正常與例外案例的可執行檢查見 tests/test_contracts.py。
 

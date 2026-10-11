@@ -16,7 +16,7 @@
     return result;
   };
   const lock = () => {
-    root.querySelectorAll('button, select, input').forEach(el => { el.disabled = busy; });
+    root.querySelectorAll('button, select, input, textarea').forEach(el => { el.disabled = busy; });
     $('generate-run').disabled = busy || !context?.can_generate || !$('run-cycle').value;
     $('evaluate-run').disabled = busy || !run || !context?.can_generate || !$('run-cycle').value;
     $('load-run').disabled = busy || !$('saved-run').value;
@@ -69,10 +69,10 @@
       card.append(node('h3', item.input_snapshot.product_name + ' · ' + item.input_snapshot.sku + ' · 箱入 ' + item.pack_size + '件'));
       const sums = {U: 0, C: 0, RISK: 0}; item.sources.forEach(s => { sums[s.bucket] += s.quantity; });
       const metrics = node('div', ''); metrics.className = 'run-metrics';
-      for (const [label, value] of [['H', item.h ?? '不可用'], ['日需求 μ', item.mu ?? (item.mode==='direct'?'無法計算':'無有效預測')],
-        ['目標 S', item.target_stock ?? '無法計算'], ['原始 Q', item.raw_qty ?? '無法計算'],
+      for (const [label, value] of [['可用現貨', item.h ?? '不可用'], ['預估日銷量', item.mu ?? (item.mode==='direct'?'無法計算':'無有效預測')],
+        ['目標庫存', item.target_stock ?? '無法計算'], ['整箱前需求', item.raw_qty ?? '無法計算'],
         ['建議量', item.suggested_qty === null ? (item.mode==='direct'?'無法計算':'無有效建議') : item.suggested_qty + '件'],
-        ['有效 U／C', sums.U + '／' + sums.C], ['未扣抵風險量', sums.RISK]]) {
+        ['待接單／已承諾未到貨', sums.U + '／' + sums.C], ['未扣抵風險量', sums.RISK]]) {
         const cell = node('div', label); cell.className = 'run-metric'; cell.append(node('strong', String(value))); metrics.append(cell);
       }
       card.append(metrics, node('p', 'L=' + item.lead_days + '；SS=' + item.safety_stock + '；容量=' + item.capacity +

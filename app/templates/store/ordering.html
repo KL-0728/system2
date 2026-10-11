@@ -2,11 +2,6 @@
 {% block title %}補貨工作台｜統家便利店{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/ordering.css') }}">
-<nav class="store-nav" aria-label="店長主選單">
-  <a aria-current="page" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">補貨</a>
-  <a href="{{ url_for('ordering.orders_page', store_id=store.id) }}">訂單</a>
-  <span aria-disabled="true" title="由履約模組提供">收貨</span>
-</nav>
 
 <header class="page-heading">
   <div><p class="eyebrow">{{ store.code }}</p><h1>每日補貨工作台</h1></div>

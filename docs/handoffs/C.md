@@ -1,5 +1,13 @@
 # C 模組交接
 
+## A協調更新：2026-10-11
+
+- C PR #1已合併ab704d9；A操作與排版補修PR #2已合併f2d5f67；B／C來源修正PR #4已合併bd906a0。下方「未提交」「外部B替身」是原開發階段紀錄，請以目前main的提供者為準。
+- 目前正式B提供runs／integrity／inventory_writer，正式C提供orders；D未結與履約仍須依明示開發模式使用受控来源。來源與示範指南見[提供者整合](../provider-integration.md)。
+- 本輪共用選單、首頁資料準備、計算頁返回訂購、快照來源及查詢改善見[全專案檢查](../project-review-2026-10-11.md)。C需複核最新畫面，不把原模組的人類實測結果擴大到這批A補修。
+
+以下保留原交付與補修歷史。
+
 > 最新A補修：工作台及預覽排除先開確認視窗，取消／Esc不改值，確認設0與skip。一般調整原因依spec6.4選項即可，補充說明選填；預覽及決策明細顯示skip中文，避免誤標未調整。新增有CSRF的/logout表單入口；電腦五欄資料＋下排原因，工具列移至上方。MySQL79項／Node2項通過，Edge8項驗桌面三種寬度、平板、手機與登出。未改C分支或DTO、資料表，未提交推送；依[最新重測五步](../a-manual-testing.md)複核。
 
 > A後續補修：草稿run選擇、權限／時間邊界、草稿續作與未知送單恢復、鎖後刷新及併發重送已修，CSS與操作入口已更新。MySQL77項／Node2項通過，並完成真實Edge操作。C請依[最新人工實測](../a-manual-testing.md)複核；尤其`SPECIAL_NEED_REQUIRED`／`EXCLUSION_REQUIRES_EDIT`、分頁metadata與決策snapshot新增政策參數。基準ab704d9加A本機未提交修改，未改C分支。原交付紀錄如下。

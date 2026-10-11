@@ -1,0 +1,6 @@
+<nav class="store-nav" aria-label="店長主選單">
+  <a {% if request.endpoint in ('ordering.ordering_page', 'inventory.replenishment_page') %}aria-current="page"{% endif %} href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">補貨</a>
+  <a {% if request.endpoint in ('ordering.orders_page', 'ordering.order_page') %}aria-current="page"{% endif %} href="{{ url_for('ordering.orders_page', store_id=store.id) }}">訂單</a>
+  <span aria-disabled="true" title="待履約模組接入">收貨</span>
+  {% if current_user.role == 'manager' %}<a {% if request.endpoint == 'inventory.data_page' %}aria-current="page"{% endif %} href="{{ url_for('inventory.data_page', store_id=store.id) }}">資料管理</a>{% endif %}
+</nav>

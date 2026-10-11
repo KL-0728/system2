@@ -76,9 +76,9 @@ def create_app(overrides=None):
         store, drafts, run = None, [], None
         if g.user and g.user.role in ('manager', 'admin'):
             from app.models import Store, OrderDraft
-            from app.modules.ordering.routes import latest_run
+            from app.services.run_sources import latest_run
             store = next((s for s in g.user.stores if s.active), None) if g.user.role == 'manager' else \
-                db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id)).scalars().first()
+                db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id).limit(1)).scalar_one_or_none()
             if store:
                 run = latest_run(store.id)
                 drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.user_id == g.user.id,
