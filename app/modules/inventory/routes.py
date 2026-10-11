@@ -173,3 +173,6 @@ register_replenishment(bp)
 
 from app.modules.inventory.replenishment_demo import register_replenishment_demo
 register_replenishment_demo(bp)
+
+from app.modules.inventory.forecast_modes_demo import register_forecast_modes_demo
+register_forecast_modes_demo(bp)

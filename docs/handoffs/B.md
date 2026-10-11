@@ -1,6 +1,91 @@
 # B 模組交接
 
-## 2026-10-11 B01 更正（本次）
+## 2026-10-11 B04（本次，停在 B04）
+
+- 已讀 AGENTS.md、agent.md、spec.md、README.md 及凍結 docs/contracts.md。開工 feat/b-module 乾淨；git fetch origin --tags 成功；git pull --ff-only 首次網路重設失敗、重試成功（Already up to date）。
+- HEAD／個人上游 b1b06377775f6f8abf39302792b54f4209726e00；origin/main f2d5f67452ac249fe14a979a1433d69fa2802236 及 a03-parallel-v2 1744fbd01446597b3be6c552b991476d86950b75 均已在本分支歷史，祖先檢查退出碼0。被測版本為此 HEAD 加本機未提交 B04 修改。
+- 只做 B04。不 commit、不 push、不開 PR、不合併 main、不 reset、不 clean；保留既有 B01 更正、B02、B03。未修改 spec、凍結合約 v1／消費端測試或 A／C／D 檔案，未覆寫 .env（此 checkout 沒有 .env）。B05 未開始。
+- 環境沿用忽略的 instance/b01-test-env.ps1、Python3.12、MySQL9.6 InnoDB 127.0.0.1:3308；B 自己的 system2_b01_demo／system2_b01_test，migration head 884e7a53a8c8，未增加 schema／migration。
+- B 正式 inventory_writer／integrity／runs 沿用同一 caller session；人工／註記服務不 commit 或 rollback，由呼叫端管理交易。Store 鎖及計算版本阻止舊資料覆寫；保存人工新修訂／歷史註記會提高 Store.calculation_version，不改庫存；生成／試算不提高該版本、不送訂單。
+- 開發 D open_orders 仍為 ControlledOpenOrders。新增真實 B→C 測試在隔離 test DB 使用正式 C 草稿、預覽、重要確認及送單，僅 D 未結來源受控；這是有限相容證據，正式 D 閉環整合仍待 A05，產品 V 全套仍待 A06。畫面人工驗收由 B 回報後再記錄。
+
+### 改動
+
+- app/services/manual_forecasting.py：Decimal 字串／Decimal 非負有限、最多三位小數、上限1000000；帶入最近值／理由／actor／時間／期限。人工值新增修訂而非覆寫，依當時 PolicyVersion.parameters.manual_valid_days（預設7）設定第七日21:00期限，audit 留政策 id／版本。最新過期值只作參考、不退回更舊值。
+- app/models/replenishment.py：僅增加 ManualForecastOverride 的更新／刪除不可變守衛，未改欄位、DDL 或共用不可變模型。修訂來源可追蹤，舊 run 保留當時人工值。
+- app/services/replenishment.py：生成明選 model／manual／direct；人工每輪 product_id 明確確認，重新試算未確認時 FORECAST_INSUFFICIENT 阻擋，期限到點失效。manual 使用同一精確 Fraction／Decimal 整箱公式與時序；超量 null＋阻擋，不截斷。七日品質事實仍在 input_snapshot。
+- direct 保存日期、說明用需求量、理由、安排及獨立候選訂量；mu、S、raw、suggested 均 null，無精確曲線。output_snapshot／DIRECT_ORDER.details 保存不扣任何銷售的保守現貨＋候選＋來源上界，含期外／逾期／爭議可能到貨；明示無法評估需求缺口。1000需求＋1000最終不會變2000。箱入、上限、截止、版本、庫存缺口／負帳面及物流檢查保留。
+- 歷史銷售註記只改既有 SalesDaily.event_note／version、Store 計算版本及 audit，不補缺檔、不改 sold_qty／庫存。HISTORICAL_EVENT 是 info，歷史銷售仍納平均，不單獨產生 SPECIAL_DEMAND；本次直接需求另存於 run input_snapshot 並產生 important。
+- B 自有路由加入 POST /api/replenishment/manual-forecasts、POST /api/sales/events，context 增加每商品最新人工參考／七日既有列，既有生成與試算支援模式選擇及確認。既有 v1 RunDTO／RunProvider 簽章不變；生成 API 新參數可選，B03 舊客戶相容。
+- app/static/js/forecast_modes.js、replenishment.js、B 模板／CSS：分開人工日需求與直接候選訂量；人工未勾選拒絕、每次生成／讀取／試算重新確認；修改最終量或輪次取消試算勾選；顯示 actor、時間、期限及直接保守容量，模式各自呈現正確公式。重新核對版本／保存註記／生成後仍保留直接需求日期、數量、理由及安排，不保留人工勾選。
+- app/modules/inventory/forecast_modes_demo.py、B routes.py：guarded additive prepare-b04-demo，僅 B 自己 demo DB／MODULE_DEV=B，已存在時原封保留，拒絕覆寫帳號，不重設時鐘／既有活動。新增 B04DEMO（id5）／b04manager、SKU01–04 的合成歷史／已核對初始庫存／政策與配送輪次，並一筆過期人工參考。
+- tests/test_forecast_modes.py：B04 51 例，含精度／期限／最新過期不回退／每輪確認／快照不可變／回滾／CSRF／權限／版本／非法模式／庫存阻擋／null與保守容量／歷史資訊／真實 B→C 消費。
+- tests/browser_forecast_modes.py：真實 Edge 1280／390／320，三位小數拒絕、人工 Q13、勾選失效、歷史 info、直接1000、試算1200、原值保存、20px無頁面橫向溢出、無 JS error。tests/manual_forecast_modes.py 在 B demo 做持久化真實 Edge 核對。
+- 對應 B04 的 V12、V38、V41、V42、V49 部分；未將 B 模組測試當成所有產品驗收。
+
+### 實際命令與結果
+
+在 C:\Users\USER\Desktop\system2 執行（不需重新建庫）：
+
+~~~powershell
+. .\instance\b01-test-env.ps1
+$env:PYTHONIOENCODING='utf-8'
+.\.venv\Scripts\python.exe scripts/check_environment.py
+.\.venv\Scripts\python.exe -m pytest tests/test_replenishment.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest tests/test_forecast_modes.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest tests/browser_forecast_modes.py tests/browser_replenishment.py tests/browser_inventory.py -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+$env:APP_ENV='test'
+.\.venv\Scripts\python.exe -m flask --app wsgi db check
+node --check app/static/js/forecast_modes.js
+node --check app/static/js/replenishment.js
+git diff --check
+~~~
+
+- 環境 demo／test 前後均 PASS、head 884e7a53a8c8。
+- B03 專項 48 passed in 28.23s；B04 專項最後46 passed in31.68s（含真實 B→C 兩個案例）；其後新增5個期限／政策／精度／demo防護案例，完整回歸已全部通過，B04最終共51例。
+- 全套 pytest：2 failed, 272 passed in182.89s（274例），沒有warnings summary。兩項失敗仍是原有 tests/test_contracts.py::test_independent_module_boot[C-expected1] 及 ::test_no_silent_fallback。凍結消費端的模式／DTO／業務案例通過，但不能說整份凍結測試全綠；兩項共用啟動假設請A協調。
+- 最終真實 Edge：12 passed in40.06s（B04 3＋B03 3＋B02 6）；較早單獨 B04 3 passed in12.50s、B03 3 passed in11.00s，最後以合併12例結果為準，無skip、無warnings summary。
+- 最後只改 B04 前端直接需求輸入保留，實際追加執行 pytest tests/browser_forecast_modes.py tests/browser_replenishment.py -q -p no:cacheprovider：6 passed in23.52s；最後 node --check 與 diff 檢查均0，沒有修改後端或重跑無關測試。
+- db check：No new upgrade operations detected；兩支 node --check 和 git diff --check 退出碼0。Git只有既有 LF→CRLF 提示，無差異空白錯誤。
+
+另在 APP_ENV=demo、MODULE_DEV=B 實際執行 inventory prepare-b04-demo 及 tests/manual_forecast_modes.py；最後 PASS，已保存人工 run#4（5.125/Q13）及直接 run#5（1000、null、保守1020）。所有庫存數量／版本、時鐘及其他門市版本未變；B04 自己只新增人工修訂、計算版本／audit 及 run。
+過程 CLI 首次漏匯入模型而整筆回滾；示範核對先後修正既有 NEGATIVE_BOOK 代碼與快照選單 selector，先前已保存的 B04 人工修訂／run#2、#3保留，沒有 reset。人工相容測試曾因錯讀 C 回應欄位失敗，已修正 B 自有測試，C 檔案未變；以最後測試結果為準。
+既有 favicon.ico 404 不影響登入或功能；/store/replenishment 應200。未隱藏／跳過兩項共用舊前提失敗，詳後方原有「尚待A協調的共用測試」。
+
+### B 現在照做的畫面驗收
+
+現在請 B 核對工作區及畫面；保留現有資料，不重新 seed／reset。若有舊 Flask，先在其終端 Ctrl+C，另於專案根目錄開 PowerShell：
+
+~~~powershell
+. .\instance\b01-test-env.ps1
+$env:APP_ENV='demo'
+$env:MODULE_DEV='B'
+.\.venv\Scripts\python.exe scripts/check_environment.py
+.\.venv\Scripts\python.exe -m flask --app wsgi inventory prepare-b04-demo
+.\.venv\Scripts\python.exe -m flask --app wsgi run --host 127.0.0.1 --port 5000
+~~~
+
+prepare-b04-demo 現在應顯示已存在／保留資料。不要再執行清庫命令，也不需建立 .env。瀏覽 http://127.0.0.1:5000/login，登入 b04manager；密碼沿用本機 DEMO_PASSWORD，可在另一個載入私有腳本的本機終端用 $env:DEMO_PASSWORD 查看，勿貼聊天或加入Git。帳號已用真實 Edge 登入成功。
+同一瀏覽器開 http://127.0.0.1:5000/api/auth/me，核對 username=b04manager、stores 內 B04DEMO 的 id5（不是 user id）；接著開 http://127.0.0.1:5000/store/replenishment?store_id=5。若主頁顯示 C 工作台，不以其入口代替本次網址；MODULE_DEV=B 未設定或使用舊程序時，先按上述命令重啟，非預期 API404不要重設DB。
+
+1. 確認業務時間2026-10-09 21:20（Asia/Taipei）、B=21:00、截止22:00；配送選第一輪2026-10-10 21:00、L1。未結來源會明示受控測試。展開「計算模式／人工值／歷史註記」。預設各商品七日模型；產生快照，飲料H20／μ20／S50／Q30，HISTORICAL_EVENT info，沒有因歷史活動新增SPECIAL_DEMAND。雨衣、泡麵缺一日顯示null／無有效建議；衛生紙待對帳，H不可用及NEGATIVE_BOOK。生成／試算不改庫存、不建立訂單。
+2. 泡麵選「人工預測日需求」；最近有效值5.125、理由、設定者、設定時間及有效至2026-10-16 21:00應可見（最初過期參考仍保留於DB，最新有效值由AI自測保存）。填5.1251、理由後按「保存新人工預測」→拒絕最多三位小數，不產生修訂；改5.125及「已核對每日需求5.125件與活動交付安排」→保存成功、版本更新、checkbox仍未勾。
+3. 不勾確認直接「產生並保存計算快照」→MANUAL_CONFIRMATION_REQUIRED；勾「我已核對本輪人工值、理由與期限」後生成→泡麵μ5.125、S20.25、原始12.25、向上整箱13件，MANUAL_FORECAST important；缺檔品質事實仍保留。記下快照id。
+4. 原結果下方「本次試算已核對人工值與期限」預設未勾；直接試算→FORECAST_INSUFFICIENT block。勾選再試算→解除此未確認阻擋，每次顯示新的試算後勾選再次清空。改最終量／輪次亦須重新核對，勾選不代表C正式送單確認。從下拉選同一id「讀取原快照」→回原5.125／13，保存內容未改。
+5. 泡麵模式改回「七日模型」，雨衣選「特殊直接訂購」；填日期2026-10-10、活動需求1000件、理由「社區活動需要一千件雨衣，已核對件數」、安排「到貨後直接交付活動單位」、本次直接候選1000。生成→mu、S、raw、suggested顯示「無法計算」，最終1000；無精確需求曲線；H20＋候選1000＋未結0=1020，常規容量100。DIRECT_ORDER／SPECIAL_DEMAND／LARGE_QUANTITY／CAPACITY重要警示，明示無法評估需求缺口；不是2020，不縮成容量100。
+6. 雨衣最終改1200後試算→保守1220、輸入維持1200；讀原快照→1000／1020。改0試算→INVALID_QUANTITY阻擋。飲料七日正常，不允許特殊直接模式；直接試算飲料31件仍INVALID_PACK，不自動取30／36。
+7. 展開飲料「歷史銷售註記」，選一個既有日期、輸入「歷史活動僅供資訊，銷售照常納入平均」並保存→原銷量、庫存不變，資料版本提高；新生成飲料仍μ20／Q30及HISTORICAL_EVENT info。此後用舊快照試算→VERSION_CONFLICT；仍可讀回舊快照，不能無聲更新舊輸入。
+8. 衛生紙選人工並保存5／理由，勾確認後生成，或填完整直接特殊需求生成→H仍不可用、模型量null及NEGATIVE_BOOK，不能靠確認解除。不要在本次使用B05未交付的對帳操作來清除此合成案例。手機390／320px與放大文字應可使用，無整頁橫向溢出。
+
+期限到點與最新過期不回退已由可控業務時間的隔離 MySQL測試驗證；本機 demo 時鐘保持不變，若要手動推進到期限需另行安排相應輪次與盤點／銷售，不要求為本次驗收破壞既有錄影資料。C正式重要例外與送單的有限相容由test DB驗證，此B畫面的「試算」不會建訂單。
+
+成功可貼：「我是B，已依B04指南核對人工5.125→13、未確認阻擋、雨衣直接1000／容量1020、歷史註記info及庫存阻擋；仍停在B04，不提交、不推送，等我指示。」
+失敗回報步驟、username／store id、HEAD＋本機差異、實際／預期、錯誤文字／warnings summary；不要貼密碼。B04人工結果尚未由組員回報；完整模組PR在B05後依授權再處理。
+
+---
+
+## 2026-10-11 B01 更正（前次紀錄）
 
 本次只處理 B01。feat/b-module 開工乾淨；fetch 與本分支 pull --ff-only 成功，HEAD／個人上游 2735faa，origin/main f2d5f67 已在本分支歷史中。B02／B03 已有先前提交，本次未改其程式；不 commit、不 push、不開 PR、不合併 main。
 
@@ -43,7 +128,7 @@ git diff --check
 | B01 | 同交易庫存異動、來源唯一與重試、盤點差額／不可變修訂、H與入帳阻擋 | 前次全套121 passed；B＋合約70 passed；數字核對PASS；f2d5f67＋當時未提交修改 | B回報70 passed in 48.61s；其餘未回報 | 已由組員提交a139a7a，沿用 |
 | B02 | CSV整批驗證／提交／更正、歷史轉日常、防重扣、盤點／修訂畫面及回應遺失恢復 | 前次全套173 passed in 155.69s；真實Edge6 passed in 28.00s；a139a7a＋當時未提交修改 | 畫面人工結果尚未回報 | 已由組員提交5ca0263，沿用；保留前次證據 |
 | B03 | 七日品質／Decimal輸出／精確整箱、固定B及L、U/C/RISK、雙版時序／容量、不可變run查詢／明細、v1 runs註冊及畫面 | B03新增48例通過；全套219 passed／2 failed in 146.51s；Edge9 passed in26.29s；demo Edge PASS；5ca0263＋未提交B03 | 待B照B03指南實測 | 停在B03；兩個共用舊假設請A協調；不發布、不進B04 |
-| B04 | 未開始 | 未執行 | 未執行 | 本次不授權 |
+| B04 | 人工預測追加修訂／期限／每輪確認、歷史註記info、特殊直接null與保守容量、庫存阻擋及B畫面 | b1b0637＋未提交B04；新增51例於全套通過；全套272 passed／2既有共用失敗；Edge12 passed in40.06s＋受影響6例重驗23.52s；demo PASS | 待B依本次B04指南實測 | 停在B04、不發布；兩項共用假設待A；B05未開始 |
 | B05 | 未開始 | 未執行 | 未執行 | 本次不授權 |
 
 ## B03 改動與證據

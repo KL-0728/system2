@@ -10,6 +10,7 @@
 <p id="run-message" role="status" aria-live="polite" tabindex="-1"></p>
 <section class="run-panel"><h2>本輪計算</h2>
 <label for="run-cycle">配送輪次</label><select id="run-cycle"></select>
+<details class="forecast-choices"><summary>計算模式／人工值／歷史註記</summary><p>人工日需求與最終訂量是不同操作。有效值每輪主動確認；過期值僅作參考。庫存缺口或負帳面仍須先處理。</p><div id="forecast-options"></div></details>
 <button type="button" id="generate-run">產生並保存計算快照</button>
 <button type="button" id="refresh-run-context">重新核對版本</button>
 <p>基準固定本日21:00；產生時間另行保存。保護期間為 1＋到貨天數。建議量向上取整箱，0仍為0。</p>
@@ -23,5 +24,6 @@
 <p>試算不建立訂單、不異動庫存，也不覆寫原快照。正式草稿／確認／送單由訂購流程處理。</p>
 </section>
 </div>
+<script defer src="{{ url_for('static', filename='js/forecast_modes.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/replenishment.js') }}"></script>
 {% endblock %}

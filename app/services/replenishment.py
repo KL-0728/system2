@@ -11,6 +11,7 @@ from app.extensions import db
 from app.models import (Store, User, Product, StoreProduct, PolicyVersion, DeliveryCycle,
                         SalesDaily, Inventory, ReplenishmentRun, RunItem)
 from app.providers import get_provider
+from app.services.manual_forecasting import latest_reference
 from app.services.clock import aware, utc_naive, round_window, TAIPEI
 from app.services.errors import DomainError
 from app.services.inventory import _lock_store, _authorize, _business_now, _audit
@@ -112,7 +113,7 @@ def _item(row):
         inventory_version=data['inventory_version'], sources=tuple(_source(v) for v in data['sources']),
         warnings=tuple(_warning(v) for v in row.warnings), input_snapshot=copy.deepcopy(row.input_snapshot),
         timeline_committed=tuple(data['timeline_committed']), timeline_with_pending=tuple(data['timeline_with_pending']),
-        manual_forecast=None, run_item_id=row.id)
+        manual_forecast=copy.deepcopy(data.get('manual_forecast')), run_item_id=row.id)
 
 
 def _run(row, items):
@@ -121,33 +122,137 @@ def _run(row, items):
         datetime.fromisoformat(row.snapshot['protection_end']), row.model_version, tuple(items), row.warning_version)
 
 
-def _model(item, *, baseline, end, arrival, lead, now, sources, final=None):
-    warnings = [w for w in item.warnings if w.code in ('FORECAST_INSUFFICIENT', 'INVENTORY_GAP', 'NEGATIVE_BOOK')]
-    if item.h is None or not item.input_snapshot['forecast_quality']['valid']:
+def _model(item, *, baseline, end, arrival, lead, now, sources, final=None, manual_confirmed=True):
+    """Evaluate one frozen input set; modes never replace H or silently fall back."""
+    from fractions import Fraction
+    from app.services.manual_forecasting import demand, day_value, text_field
+    warnings = [w for w in item.warnings if w.code in ('INVENTORY_GAP', 'NEGATIVE_BOOK')]
+    historical = [dict(date=s['date'], note=s['event_note']) for s in item.input_snapshot['sales'] if s.get('event_note')]
+    if historical:
+        warnings.append(WarningDTO('HISTORICAL_EVENT', '歷史銷售註記僅供資訊，銷售仍納入平均；不代表本次活動需求', {'events':historical}))
+    requested = item.input_snapshot.get('requested_mode', 'model')
+    reference = item.input_snapshot.get('manual_forecast')
+    quality = item.input_snapshot['forecast_quality']
+    mode = requested
+    if item.h is None:
+        mode = 'unavailable'
+    elif requested == 'manual':
+        if not reference or datetime.fromisoformat(reference['valid_until']) <= now:
+            mode = 'unavailable'
+            warnings.append(WarningDTO('FORECAST_INSUFFICIENT', '人工預測缺少或已過期，只供參考，請重新設定', {
+                'reason':'expired_manual' if reference else 'missing_manual',
+                'valid_until':reference['valid_until'] if reference else None}))
+    elif requested == 'direct':
+        if quality['valid']:
+            raise DomainError('DIRECT_REQUIRES_INSUFFICIENT', '有效模型請直接調整最終量；特殊直接模式限無有效模型的品項', 422)
+    elif not quality['valid']:
+        mode = 'unavailable'
+        warnings.append(WarningDTO('FORECAST_INSUFFICIENT', '預測資料不足／需求可能被低估；不以零補齊', {
+            'invalid_days':quality['invalid_days']}))
+    if mode == 'unavailable':
         if any(s.bucket == 'RISK' for s in sources):
             warnings.append(WarningDTO('LOGISTICS_RISK', '未結來源含期外、逾期或爭議；未扣抵需求', {}))
         if any(s.bucket == 'U' for s in sources):
             warnings.append(WarningDTO('PENDING_SUPPLY', '待接單仍未成為承諾', {}))
-        return replace(item, lead_days=lead, sources=sources, warnings=tuple(warnings))
-    total = item.input_snapshot['sales_total']
-    mu, target, raw, suggested = calculate(total, lead_days=lead, safety_stock=item.safety_stock,
-                                          h=item.h, sources=sources, pack_size=item.pack_size)
+        return replace(item, mode='unavailable', mu=None, target_stock=None, raw_qty=None, suggested_qty=None,
+            manual_forecast=None, lead_days=lead, sources=sources, warnings=tuple(warnings),
+            timeline_committed=(), timeline_with_pending=())
+    if mode == 'direct':
+        need = item.input_snapshot['special_need']
+        final = quantity(item.input_snapshot['direct_quantity'] if final is None else final)
+        committed = sum(s.quantity for s in sources if s.source_type != 'pending' and not s.disputed)
+        bound = dict(assumption='不扣任何預估銷售；無法評估需求缺口；未確定到貨只作保守預覽',
+            h=item.h, candidate_qty=final, committed_qty=committed,
+            total_open_qty=sum(s.quantity for s in sources),
+            upper_bound_committed=item.h+final+committed,
+            upper_bound_with_pending=item.h+final+sum(s.quantity for s in sources),
+            capacity=item.capacity, unknown_arrival_sources=[s.source_id for s in sources if s.eta < now])
+        warnings.append(WarningDTO('DIRECT_ORDER', '特殊直接訂購：模型量無法計算，無法評估需求缺口', {
+            'conservative_capacity':bound}))
+        warnings.append(WarningDTO('SPECIAL_DEMAND', '本次活動／團體需求，請核對理由與存放／交付安排', {
+            'need_date':need['need_date'], 'need_qty':need['need_qty'], 'arrangement':need['arrangement']}))
+        if final <= 0:
+            warnings.append(WarningDTO('INVALID_QUANTITY', '特殊直接訂購須指定正數最終量', {}))
+        if final % item.pack_size:
+            warnings.append(WarningDTO('INVALID_PACK', '最終量須符合箱入數，不自動改量', {
+                'lower':final-final%item.pack_size, 'upper':final+item.pack_size-final%item.pack_size}))
+        policy = item.input_snapshot['policy_parameters']
+        if final >= policy['absolute_large_qty']:
+            warnings.append(WarningDTO('LARGE_QUANTITY', '大量需求請核對件／箱與收貨安排', {'final_qty':final}))
+        if bound['upper_bound_with_pending'] > item.capacity:
+            warnings.append(WarningDTO('CAPACITY', '無有效需求預測，依不扣銷售的保守到貨量檢查存放安排', {
+                'conservative_capacity':bound}))
+        if any(s.bucket == 'RISK' for s in sources) or day_value(need['need_date']) < arrival.astimezone(TAIPEI).date():
+            warnings.append(WarningDTO('LOGISTICS_RISK', '需求日期或未結來源存在到貨風險，請另核對安排', {}))
+        if any(s.bucket == 'U' for s in sources):
+            warnings.append(WarningDTO('PENDING_SUPPLY', '待接單不是已承諾到貨', {}))
+        return replace(item, mode='direct', mu=None, target_stock=None, raw_qty=None, suggested_qty=None,
+            manual_forecast=None, lead_days=lead, sources=sources, warnings=tuple(warnings),
+            timeline_committed=(), timeline_with_pending=())
+    if mode == 'manual':
+        mu = Fraction(demand(reference['daily_demand']))
+        warnings.append(WarningDTO('MANUAL_FORECAST', '本輪使用人工日需求，須主動確認值、理由與期限', {
+            'override_id':reference['override_id'], 'confirmed':manual_confirmed,
+            'valid_until':reference['valid_until']}))
+        if not manual_confirmed:
+            warnings.append(WarningDTO('FORECAST_INSUFFICIENT', '本輪尚未確認人工預測；不得以此送單', {
+                'reason':'manual_not_confirmed'}))
+        target = mu * (1+lead) + item.safety_stock
+        raw = max(Fraction(0), target-item.h-sum(s.quantity for s in sources if s.bucket in ('U','C')))
+        suggested = ((raw.numerator+raw.denominator*item.pack_size-1)//(raw.denominator*item.pack_size))*item.pack_size
+    else:
+        mu, target, raw, suggested = calculate(item.input_snapshot['sales_total'], lead_days=lead,
+            safety_stock=item.safety_stock, h=item.h, sources=sources, pack_size=item.pack_size)
     if suggested > 1_000_000:
         return replace(item, mode='unavailable', mu=None, target_stock=None, raw_qty=None,
-            suggested_qty=None, lead_days=lead, sources=sources, timeline_committed=(), timeline_with_pending=(),
-            warnings=tuple(warnings + [WarningDTO('INVALID_QUANTITY', '計算量超過技術上限；未截斷為可訂量', {
-                'calculated_qty': suggested, 'maximum': 1_000_000})]))
+            suggested_qty=None, manual_forecast=None, lead_days=lead, sources=sources,
+            timeline_committed=(), timeline_with_pending=(),
+            warnings=tuple(warnings+[WarningDTO('INVALID_QUANTITY', '計算量超過技術上限；未截斷為可訂量', {
+                'calculated_qty':suggested,'maximum':1_000_000})]))
     final = suggested if final is None else quantity(final)
     calculated, committed, pending = risks(mu=mu, target=target, raw=raw, suggested=suggested, final=final,
         pack=item.pack_size, capacity=item.capacity, policy=item.input_snapshot['policy_parameters'],
         sources=sources, baseline=baseline, end=end, arrival=arrival, h=item.h, evaluated_at=now)
-    return replace(item, mu=decimal_value(mu), target_stock=decimal_value(target), raw_qty=decimal_value(raw),
-        suggested_qty=suggested, lead_days=lead, sources=sources, warnings=tuple(warnings) + calculated,
+    return replace(item, mode=mode, mu=decimal_value(mu), target_stock=decimal_value(target), raw_qty=decimal_value(raw),
+        suggested_qty=suggested, lead_days=lead, sources=sources, warnings=tuple(warnings)+calculated,
+        manual_forecast=copy.deepcopy(reference) if mode=='manual' else None,
         timeline_committed=committed, timeline_with_pending=pending)
 
 
+def _selection(modes, specials, direct_quantities, confirmations, ids):
+    from app.services.manual_forecasting import day_value, text_field
+    modes = {} if modes is None else modes
+    specials = {} if specials is None else specials
+    direct_quantities = {} if direct_quantities is None else direct_quantities
+    if any(not isinstance(value, dict) or any(type(k) is not int or k not in ids for k in value)
+           for value in (modes, specials, direct_quantities)):
+        raise DomainError('INVALID_INPUT', '模式／特殊需求必須對應本店商品id', 400)
+    if any(v not in ('model','manual','direct') for v in modes.values()):
+        raise DomainError('INVALID_INPUT', '計算模式須為model／manual／direct', 400)
+    if not isinstance(confirmations,(tuple,list)) or any(type(k) is not int or k not in ids for k in confirmations) or len(set(confirmations))!=len(confirmations):
+        raise DomainError('INVALID_INPUT', '人工確認須為不重複的本店商品id', 400)
+    if any(modes.get(k)!='manual' for k in confirmations):
+        raise DomainError('INVALID_INPUT', '人工確認只能用於人工預測模式', 400)
+    if any(v=='manual' and k not in confirmations for k,v in modes.items()):
+        raise DomainError('MANUAL_CONFIRMATION_REQUIRED', '請主動確認本輪人工預測；不能沿用前輪勾選', 422)
+    if any(modes.get(k)!='direct' for k in set(specials)|set(direct_quantities)):
+        raise DomainError('INVALID_INPUT', '特殊需求／直接訂量只用於直接模式', 400)
+    for pid,mode in modes.items():
+        if mode!='direct': continue
+        quantity(direct_quantities.get(pid), minimum=1)
+        need=specials.get(pid)
+        if not isinstance(need,dict):
+            raise DomainError('SPECIAL_NEED_REQUIRED','請填特殊需求日期、需求量、理由及存放／交付安排',422)
+        day_value(need.get('need_date'))
+        quantity(need.get('need_qty'),minimum=1)
+        text_field(need.get('reason'),'特殊需求理由')
+        text_field(need.get('arrangement'),'存放／交付安排',200)
+    return modes,specials,direct_quantities,set(confirmations)
+
+
 class ReplenishmentService:
-    def generate(self, *, store_id, actor_id, cycle_id, expected_version, session):
+    def generate(self, *, store_id, actor_id, cycle_id, expected_version, session,
+                 modes=None, special_needs=None, direct_quantities=None, manual_confirmations=()):
         store = authorize(session, store_id, actor_id, lock=True)
         quantity(expected_version, minimum=1, maximum=ID_MAX)
         if store.calculation_version != expected_version:
@@ -164,6 +269,8 @@ class ReplenishmentService:
         if not configured:
             raise DomainError('NO_PRODUCTS', '本店未設定有效商品', 422)
         ids = {product.id for sp, product, policy in configured}
+        modes, special_needs, direct_quantities, confirmed = _selection(
+            modes, special_needs, direct_quantities, manual_confirmations, ids)
         # Inventory locks in product order precede sales/source locks.
         integrity = {pid: get_provider('integrity').get_integrity(store_id=store.id, product_id=pid,
                         baseline_at=baseline, session=session) for pid in sorted(ids)}
@@ -213,7 +320,7 @@ class ReplenishmentService:
                     interval_end=aware(row.interval_end).isoformat() if row else None,
                     batch_id=row.batch_id if row else None, import_mode=row.import_mode if row else None,
                     applied_at=aware(row.applied_at).isoformat() if row and row.applied_at else None,
-                    movement_id=row.movement_id if row else None))
+                    movement_id=row.movement_id if row else None, event_note=row.event_note if row else None))
             warnings = list(state.warnings)
             if not state.usable and not any(w.code in ('INVENTORY_GAP', 'NEGATIVE_BOOK') for w in warnings):
                 warnings.append(WarningDTO('INVENTORY_GAP', '缺少有效盤點或連續日常入帳，H不可用', {}))
@@ -223,7 +330,10 @@ class ReplenishmentService:
             snapshot = dict(sku=product.sku, product_name=product.name, sales=window, sales_total=total,
                 forecast_quality=dict(valid=not invalid, invalid_days=invalid), integrity=_json(dto_dict(state)),
                 policy_version_id=policy.id, policy_version=policy.version, policy_parameters=params,
-                manual_forecast=None, source_provider=dict(name=type(get_provider('open_orders')).__name__,
+                requested_mode=modes.get(product.id,'model'),
+                manual_forecast=latest_reference(session,store.id,product.id,now),
+                special_need=copy.deepcopy(special_needs.get(product.id)),
+                direct_quantity=direct_quantities.get(product.id), source_provider=dict(name=type(get_provider('open_orders')).__name__,
                     test_only=current_app.extensions['service_providers']['open_orders'][1]))
             usable = state.usable and not invalid
             item = RunItemDTO(product.id, 'model' if usable else 'unavailable', state.h,
@@ -231,20 +341,23 @@ class ReplenishmentService:
                 0 if usable else None, product.pack_size, lead, sp.safety_stock, sp.capacity, policy.version,
                 state.inventory_version, (), tuple(warnings), snapshot, (), ())
             items.append(_model(item, baseline=baseline, end=end, arrival=aware(cycle.arrival_at), lead=lead,
-                                now=now, sources=tuple(s for s in sources if s.product_id == product.id)))
+                                now=now, sources=tuple(s for s in sources if s.product_id == product.id),
+                                manual_confirmed=product.id in confirmed))
         row = ReplenishmentRun(store_id=store.id, cycle_id=cycle.id, actor_id=actor_id,
             store_version=store.calculation_version, baseline_at=utc_naive(baseline), actual_generated_at=utc_naive(now),
             data_through_at=utc_naive(max(latest) if latest else baseline - timedelta(days=7)),
-            risk_evaluated_at=utc_naive(now), model_version=MODEL_VERSION, warning_version='1', calculation_mode='model',
+            risk_evaluated_at=utc_naive(now), model_version=MODEL_VERSION, warning_version='1', calculation_mode=next(iter({i.mode for i in items})) if len({i.mode for i in items})==1 else 'mixed',
             snapshot=dict(protection_end=end.isoformat(), cycle_arrival_at=aware(cycle.arrival_at).isoformat(),
                 formula='R=1; P=1+L; S=mu*P+SS; raw=max(0,S-H-U-C); Q=ceil(raw/pack)*pack',
-                decimal_precision=60))
+                decimal_precision=60, requested_modes={str(pid):mode for pid,mode in modes.items()}))
         session.add(row)
         session.flush()
         persisted = []
         for item in items:
             data = _json(dto_dict(item))
-            data['formula'] = row.snapshot['formula']
+            data['formula'] = row.snapshot['formula'] if item.mode in ('model','manual') else None
+            if item.mode=='direct':
+                data['conservative_capacity'] = next(w.details['conservative_capacity'] for w in item.warnings if w.code=='DIRECT_ORDER')
             record = RunItem(run_id=row.id, product_id=item.product_id, mode=item.mode, mu=item.mu,
                 target_stock=item.target_stock, raw_qty=item.raw_qty, suggested_qty=item.suggested_qty,
                 input_snapshot=data.pop('input_snapshot'), warnings=data.pop('warnings'), output_snapshot=data)
@@ -286,10 +399,12 @@ class ReplenishmentService:
             raise DomainError('INVALID_INPUT', '最終量含快照外商品', 400)
         for value in final_quantities.values():
             quantity(value)
-        if manual_confirmations:
-            raise DomainError('UNSUPPORTED_MODE', 'B03尚未提供人工預測；請勿傳入人工確認', 422)
+        if not isinstance(manual_confirmations,(tuple,list)) or any(type(k) is not int or k not in ids for k in manual_confirmations) or len(set(manual_confirmations))!=len(manual_confirmations):
+            raise DomainError('INVALID_INPUT','人工確認須為不重複的快照商品id',400)
+        if any(next(i for i in run.items if i.product_id==k).input_snapshot.get('requested_mode','model')!='manual' for k in manual_confirmations):
+            raise DomainError('UNSUPPORTED_MODE','人工確認只能用於人工預測品項',422)
         sources = _sources(session, store, run.baseline_at, end, evaluated_at, ids)
         items = tuple(_model(item, baseline=run.baseline_at, end=end, arrival=aware(cycle.arrival_at),
             lead=lead, now=evaluated_at, sources=tuple(s for s in sources if s.product_id == item.product_id),
-            final=final_quantities.get(item.product_id)) for item in run.items)
+            final=final_quantities.get(item.product_id), manual_confirmed=item.product_id in manual_confirmations) for item in run.items)
         return replace(run, cycle_id=cycle.id, protection_end=end, risk_evaluated_at=evaluated_at, items=items)

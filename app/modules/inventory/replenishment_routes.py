@@ -8,11 +8,13 @@ from app.services.clock import aware, round_window
 from app.services.errors import DomainError
 from app.services.inventory import _business_now
 from app.services.replenishment import ReplenishmentService, authorize
+from app.services.manual_forecasting import ManualForecastService
 from app.services.version import transaction
 
 
 def register_replenishment(bp):
     service = ReplenishmentService()
+    manual = ManualForecastService()
 
     def store_id(value=None):
         if value is None:
@@ -30,6 +32,35 @@ def register_replenishment(bp):
         if not isinstance(data, dict):
             raise DomainError('INVALID_INPUT', '請提供JSON物件', 400)
         return data
+
+    def id_map(value, name):
+        if value is None: return {}
+        if not isinstance(value,dict) or any(not k.isascii() or not k.isdecimal() for k in value):
+            raise DomainError('INVALID_INPUT',f'{name}須以商品id對應值',400)
+        if len({int(k) for k in value})!=len(value):
+            raise DomainError('INVALID_INPUT','商品id不得重複',400)
+        return {int(k):v for k,v in value.items()}
+
+    @bp.post('/api/replenishment/manual-forecasts')
+    @require_role('manager', 'admin')
+    def save_manual_forecast():
+        data=payload()
+        with transaction():
+            result=manual.save(store_id=store_id(data.get('store_id')),product_id=data.get('product_id'),
+                actor_id=g.user.id,daily_demand=data.get('daily_demand'),reason=data.get('reason'),
+                expected_version=data.get('expected_version'),session=db.session)
+        return jsonify(result),201
+
+    @bp.post('/api/sales/events')
+    @require_role('manager', 'admin')
+    def save_historical_event():
+        data=payload()
+        with transaction():
+            result=manual.annotate(store_id=store_id(data.get('store_id')),product_id=data.get('product_id'),
+                actor_id=g.user.id,business_date=data.get('business_date'),note=data.get('note'),
+                expected_version=data.get('expected_version'),expected_sales_version=data.get('expected_sales_version'),
+                session=db.session)
+        return jsonify(result)
 
     @bp.get('/store/replenishment')
     @require_role('manager', 'admin')
@@ -55,6 +86,7 @@ def register_replenishment(bp):
                 baseline_at=b, cutoff_at=cutoff, can_generate=b <= now < cutoff,
                 source_provider=dict(name=type(provider[0]).__name__ if provider else '尚未接入',
                     test_only=provider[1] if provider else False),
+                products=manual.options(store_id=store.id,actor_id=g.user.id,session=db.session),
                 cycles=[dict(id=c.id, arrival_at=aware(c.arrival_at),
                     lead_days=(aware(c.arrival_at) - b).days) for c in cycles],
                 runs=[dict(id=r.id, baseline_at=aware(r.baseline_at), actual_generated_at=aware(r.actual_generated_at))
@@ -67,7 +99,10 @@ def register_replenishment(bp):
         data = payload()
         with transaction():
             result = service.generate(store_id=store_id(data.get('store_id')), actor_id=g.user.id,
-                cycle_id=data.get('cycle_id'), expected_version=data.get('expected_version'), session=db.session)
+                cycle_id=data.get('cycle_id'), expected_version=data.get('expected_version'), session=db.session,
+                modes=id_map(data.get('modes'),'模式'),special_needs=id_map(data.get('special_needs'),'特殊需求'),
+                direct_quantities=id_map(data.get('direct_quantities'),'直接訂量'),
+                manual_confirmations=data.get('manual_confirmations',[]))
         return jsonify(dto_dict(result)), 201
 
     @bp.get('/api/replenishment/runs/<int:run_id>')
@@ -90,5 +125,5 @@ def register_replenishment(bp):
         with transaction():
             result = service.evaluate(run_id=run_id, store_id=store_id(data.get('store_id')), actor_id=g.user.id,
                 cycle_id=data.get('cycle_id'), final_quantities={int(k): v for k, v in values.items()},
-                manual_confirmations=(), evaluated_at=_business_now(db.session), session=db.session)
+                manual_confirmations=data.get('manual_confirmations',[]), evaluated_at=_business_now(db.session), session=db.session)
         return jsonify(dto_dict(result))

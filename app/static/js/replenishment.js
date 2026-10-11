@@ -4,6 +4,7 @@
   if (!root) return;
   const $ = id => document.getElementById(id), storeId = Number(root.dataset.storeId);
   let context, run, csrf, busy = false;
+  let modeControls;
   const node = (tag, text) => { const el = document.createElement(tag); el.textContent = text; return el; };
   const local = value => new Date(value).toLocaleString('zh-TW', {timeZone: 'Asia/Taipei', hour12: false});
   const say = (text, error = false) => { $('run-message').textContent = text; $('run-message').classList.toggle('error', error); };
@@ -39,6 +40,7 @@
       const option = node('option', '#' + saved.id + ' · ' + local(saved.actual_generated_at));
       option.value = saved.id; $('saved-run').append(option);
     }
+    modeControls.renderOptions(context.products);
     if (!context.can_generate) say('目前非21:00–22:00；可讀取原快照，不能產生或重新試算。');
     else if (!context.cycles.length) say('本輪尚無配送輪次；請先準備本機B03合成案例或核對正式輪次。', true);
   };
@@ -67,9 +69,9 @@
       card.append(node('h3', item.input_snapshot.product_name + ' · ' + item.input_snapshot.sku + ' · 箱入 ' + item.pack_size + '件'));
       const sums = {U: 0, C: 0, RISK: 0}; item.sources.forEach(s => { sums[s.bucket] += s.quantity; });
       const metrics = node('div', ''); metrics.className = 'run-metrics';
-      for (const [label, value] of [['H', item.h ?? '不可用'], ['七日平均 μ', item.mu ?? '無有效預測'],
+      for (const [label, value] of [['H', item.h ?? '不可用'], ['日需求 μ', item.mu ?? (item.mode==='direct'?'無法計算':'無有效預測')],
         ['目標 S', item.target_stock ?? '無法計算'], ['原始 Q', item.raw_qty ?? '無法計算'],
-        ['建議量', item.suggested_qty === null ? '無有效建議' : item.suggested_qty + '件'],
+        ['建議量', item.suggested_qty === null ? (item.mode==='direct'?'無法計算':'無有效建議') : item.suggested_qty + '件'],
         ['有效 U／C', sums.U + '／' + sums.C], ['未扣抵風險量', sums.RISK]]) {
         const cell = node('div', label); cell.className = 'run-metric'; cell.append(node('strong', String(value))); metrics.append(cell);
       }
@@ -82,11 +84,16 @@
       }
       card.append(warnings);
       const input = node('input', ''); input.type = 'number'; input.min = 0; input.max = 1000000; input.step = 1;
-      input.value = item.suggested_qty ?? ''; input.dataset.productId = item.product_id; input.id = 'final-' + item.product_id;
+      input.value = item.suggested_qty ?? (item.mode==='direct' ? item.warnings.find(w=>w.code==='DIRECT_ORDER')?.details.conservative_capacity.candidate_qty ?? '' : ''); input.dataset.productId = item.product_id; input.id = 'final-' + item.product_id;
       if (item.mode === 'unavailable') input.dataset.unavailable = 'true';
       const label = node('label', item.mode === 'unavailable' ? '無有效建議：請先修正資料，本次不得試訂此品項' : '試算最終量（件）');
       label.htmlFor = input.id; card.append(label, input);
-      details(card, '計算公式與參數', node('p', 'R=1；P=1+L；μ=七日銷售總和÷7；S=μ×P+SS；Q原始=max(0,S−H−U−C)；Q建議=向上取整箱。缺檔、缺貨或未正常營業不補零；RISK不扣需求。'));
+      modeControls.decorateResult(card,item);
+      const formula = item.mode==='direct' ? '直接指定候選訂量；μ、S、原始量、建議量均無法計算。保守容量不扣預估銷售；活動需求量不再加一次。' :
+        item.mode==='unavailable' ? '缺少有效庫存或預測，無有效計算建議；勾選不能解除庫存阻擋。' :
+        'R=1；P=1+L；μ='+ (item.mode==='manual'?'本輪已核對的人工日需求':'七日銷售總和÷7') +
+        '；S=μ×P+SS；Q原始=max(0,S−H−U−C)；Q建議=向上取整箱。缺檔、缺貨或未正常營業不補零；RISK不扣需求。';
+      details(card, '計算公式與參數', node('p', formula));
       details(card, '七日銷售與入帳來源', table(['營業日', '銷售', '正常營業', '缺貨', '模式／入帳來源'],
         item.input_snapshot.sales.map(s => [s.date, s.sold_qty ?? '缺檔', s.is_open === null ? '未知' : s.is_open ? '是' : '否',
           s.was_stockout === null ? '未知' : s.was_stockout ? '是' : '否', (s.import_mode ?? '無') + '／' + (s.movement_id ?? '未入帳')])));
@@ -111,7 +118,7 @@
   };
   $('generate-run').addEventListener('click', () => work(async () => {
     const result = await api('/api/replenishment/runs', {store_id: storeId, cycle_id: Number($('run-cycle').value),
-      expected_version: context.store_version});
+      expected_version: context.store_version,...modeControls.readSelection()});
     render(result); await loadContext(); $('saved-run').value = result.run_id;
     say('快照已保存 #' + result.run_id + '；庫存未異動。');
   }));
@@ -128,7 +135,8 @@
       quantities[input.dataset.productId] = Number(input.value);
     });
     const result = await api('/api/replenishment/runs/' + run.run_id + '/evaluate', {
-      store_id: storeId, cycle_id: Number($('run-cycle').value), final_quantities: quantities});
+      store_id: storeId, cycle_id: Number($('run-cycle').value), final_quantities: quantities,
+      manual_confirmations:modeControls.resultConfirmations()});
     render(result, true);
     // Retain the actual final inputs; suggestions are explanatory and never replace them.
     root.querySelectorAll('input[data-product-id]').forEach(input => {
@@ -136,5 +144,9 @@
     });
     say('試算完成；原快照與庫存未變，沒有建立訂單。');
   }));
+  modeControls=window.BForecastControls({api,context:()=>context,work,
+    refresh:async message=>{await loadContext();modeControls.clearResultConfirmations();say(message);}});
+  $('run-cycle').addEventListener('change',()=>modeControls.clearResultConfirmations());
+  $('run-items').addEventListener('input',event=>{if(event.target.dataset.productId) modeControls.clearResultConfirmations();});
   work(async () => { csrf = (await api('/api/auth/csrf')).csrf_token; await loadContext(); });
 })();
