@@ -251,6 +251,8 @@ def _selection(modes, specials, direct_quantities, confirmations, ids):
 
 
 class ReplenishmentService:
+    run_model_versions = (MODEL_VERSION,)
+
     def generate(self, *, store_id, actor_id, cycle_id, expected_version, session,
                  modes=None, special_needs=None, direct_quantities=None, manual_confirmations=()):
         store = authorize(session, store_id, actor_id, lock=True)

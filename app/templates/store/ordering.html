@@ -13,6 +13,21 @@
   <p>門市：{{ store.name }}。依序完成「調整數量 → 核對提醒 → 確認送出」。</p>
 </header>
 
+{% if source_message %}
+<section class="panel error-box" role="alert">
+  <p>{{ source_message }}</p>
+  <a href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">使用本輪建議建立新草稿</a>
+</section>
+{% endif %}
+
+{% if not run %}
+<section class="panel empty-state">
+  <strong>目前沒有可用的補貨建議</strong>
+  <p>請先核對庫存與銷售，產生本輪建議，再回到此頁。</p>
+  <a href="{{ url_for('inventory.replenishment_page', store_id=store.id) }}">準備補貨建議</a>
+</section>
+{% endif %}
+
 <ol class="stage-list" aria-label="補貨三階段">
   <li class="active" data-stage-indicator="1"><strong>1</strong> 調整數量</li>
   <li data-stage-indicator="2"><strong>2</strong> 核對提醒與本單</li>
@@ -45,9 +60,7 @@
     <div><h2>1. 調整數量</h2><p>商品單位固定顯示為件；箱入數用於整箱檢查。</p></div>
     <label>搜尋商品 <input id="product-search" type="search" placeholder="名稱或商品代碼"></label>
   </div>
-  {% if not run %}
-    <div class="empty-state"><strong>目前沒有可用的補貨建議</strong><p>請先由庫存模組產生本輪建議，再回到此頁。</p></div>
-  {% else %}
+  {% if run %}
     <div id="global-error" class="error-box" role="alert" hidden></div>
     <div class="sticky-actions"><span id="draft-status" role="status">尚未建立草稿</span>
       <div class="button-row"><button id="save-button" type="button" class="secondary">只儲存草稿</button>

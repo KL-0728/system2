@@ -335,6 +335,14 @@
         byId('recovery-message').textContent = '連線中斷，尚未確認結果。恢復連線後查詢，或重試原本的送出。';
         lockUnknown(true);
       } else {
+        if (error.code === 'DRAFT_SOURCE_UNAVAILABLE') {
+          // The server confirmed this request did not submit. Keep the saved
+          // draft, and show its source-recovery page rather than mixing inputs.
+          pendingSubmission = null;
+          try { sessionStorage.removeItem(storageKey); } catch (_) { }
+          window.location.href = `/store/ordering?store_id=${bootstrap.store_id}&draft_id=${request.draftId}`;
+          return;
+        }
         showError(target, error);
         pendingSubmission = null;
         remember();
@@ -451,6 +459,11 @@
       if (!draft && cached.draftId) {
         try {
           const saved = await api(`/api/order-drafts/${cached.draftId}`);
+          if (saved.source_available === false && !pendingSubmission) {
+            try { sessionStorage.removeItem(storageKey); } catch (_) { }
+            showError(byId('global-error'), {message: saved.source_message});
+            return;
+          }
           if (saved.status === 'DRAFT' || pendingSubmission) draft = saved;
         } catch (error) {
           if (error.status === 404 || error.status === 403) {
