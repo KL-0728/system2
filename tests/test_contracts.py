@@ -35,8 +35,9 @@ def test_independent_module_boot(seeded, module, expected):
         engine.dispose()
 
 
-def test_no_silent_fallback(seeded):
+def test_no_silent_fallback(seeded, monkeypatch):
     seeded.config['MODULE_DEV'] = ''
+    monkeypatch.delitem(seeded.extensions['service_providers'], 'runs', raising=False)
     with pytest.raises(DomainError) as exc:
         get_provider('runs')
     assert exc.value.status == 503

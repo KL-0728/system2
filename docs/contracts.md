@@ -85,6 +85,10 @@ C 冪等以 `(user_id, store_id, key)` 唯一；count 以 `(store_id, user_id, r
 
 MODULE_DEV=B 注入受控 open_orders；C 注入 runs／integrity／open_orders／fulfillment；D 注入 inventory_writer／orders。已註冊真實提供者不會被替身覆蓋。一般 demo／production 缺服務503；測試模式可手動 register_provider(test_only=True)。所有開發頁持續明示替身來源。
 
+2026-10-11 相容修正（方法簽章與 DTO v1 不變）：計算提供者可用 `run_model_versions` 宣告可讀模型版本；正式 B 與 ControlledRuns 已提供此選取資訊。共用入口／C 首頁與工作台統一依安裝的提供者選取持久化快照，不因 MODULE_DEV=C 就強制使用假資料。未宣告資訊的 v1 提供者仍可使用；正式來源排除 `controlled-test-v1`／`fixture-v1`，受控來源只選 `controlled-test-v1`。真正的讀取／試算仍由提供者驗證，選取不能取代權限或版本重驗。
+
+沒有相容快照時顯示準備指引，不傳 run_id=0、不自動生成替身。舊草稿讀取新增 `source_available`／`source_message`，不相容時保留原資料；修改／預覽／新送單回 `DRAFT_SOURCE_UNAVAILABLE` 409，使用者依新建議重新建立草稿。已成功送單的冪等重試仍先回原結果。正式訂單 API／畫面一律排除 fixture_only；D 的開發用 orders 服務仍可依原合約在 test／MODULE_DEV=D 讀取明示工廠訂單。
+
 tests/test_contracts.py 是凍結消費端測試；ControlledOpenOrders 支援 normal／pending／committed／late／disputed／expired；ControlledIntegrity 支援 normal／gap／negative／no_count；ControlledRuns 支援 normal／manual／direct／insufficient／time_risk。成員可在自己的測試建立同型別案例，不修改合約來遷就實作。
 
 `make_run(session, store_id=None, scenario='normal')` 建立持久化 run／run_items，供 C 真實草稿 FK 使用；`make_order(session, store_id=None, product_id=None, quantity=30)` 建立共用正式訂單表工廠資料，Order.fixture_only=True，供 D 自身履約服務測試。兩者只限 test 或明示本機模組開發模式，不可在整合／正式模式旁路確認送單。

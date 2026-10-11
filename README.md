@@ -1,6 +1,8 @@
 # 統家便利店補貨系統
 
-產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。此版本已接入C訂購模組；B庫存／計算與D履約尚待真實整合。
+產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。此版本已接入正式B庫存／計算與C訂購；D履約與完整閉環尚待真實整合。
+
+**B／C來源修正、獨立正式快照示範與D接入防護**見[提供者整合與實測](docs/provider-integration.md)。舊受控草稿保留並提示重建；沒有正式快照時先準備補貨建議。`prepare-ordering-demo`只新增獨立BCDEMO，不重設既有資料。
 
 **A本次補修的預覽與測試請看[逐步操作指南](docs/a-manual-testing.md)**。網站需Flask＋MySQL，不能只用Live Server打開HTML。
 

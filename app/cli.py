@@ -2,6 +2,7 @@ import click
 from flask import current_app
 from app.extensions import db
 from app.config import validate_database
+from app.services.errors import DomainError
 
 
 def register_cli(app):
@@ -16,6 +17,18 @@ def register_cli(app):
         with transaction():
             seed_module_data(module)
         click.echo(f'{module} 模組開發資料已備妥；測試工廠／替身不是正式功能。')
+        if module == 'C' and not current_app.extensions['service_providers']['runs'][1]:
+            click.echo('runs 已接上正式 B，不新增受控快照；請由補貨頁產生正式建議。可用 prepare-ordering-demo 新增獨立合成案例。')
+    @app.cli.command('prepare-ordering-demo')
+    def prepare_ordering_demo():
+        from app.services.ordering_demo import prepare_ordering_demo as prepare
+        from app.services.version import transaction
+        try:
+            with transaction():
+                result = prepare(db.session)
+        except (ValueError, DomainError) as error:
+            raise click.ClickException(str(error)) from error
+        click.echo(result)
     @app.cli.command('seed-demo')
     def seed():
         if current_app.config['APP_ENV'] != 'demo':

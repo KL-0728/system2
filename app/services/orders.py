@@ -209,9 +209,13 @@ class OrderingService:
             raise DomainError('NOT_FOUND', '草稿不存在或不可存取', 404)
         items = self._draft_items(draft.id)
         products = _product_map(i.product_id for i in items)
+        from app.services.run_sources import run_source_available, STALE_DRAFT_MESSAGE
+        source_available = run_source_available(draft.run_id, draft.store_id)
         return {
             'id': draft.id, 'store_id': draft.store_id, 'run_id': draft.run_id,
             'cycle_id': draft.cycle_id, 'status': draft.status, 'version': draft.version,
+            'source_available': source_available,
+            'source_message': None if source_available else STALE_DRAFT_MESSAGE,
             'created_at': aware(draft.created_at), 'updated_at': aware(draft.updated_at),
             'items': [{
                 'product_id': item.product_id,
@@ -238,6 +242,8 @@ class OrderingService:
         authorize_store(actor, draft.store_id, roles=('manager', 'admin'))
         lock_store(draft.store_id)
         draft = self._owned_draft(draft_id, actor, lock=True)
+        from app.services.run_sources import require_draft_source
+        require_draft_source(draft)
         if draft.status != 'DRAFT':
             raise DomainError('INVALID_STATE', '只有草稿可修改', 409)
         if payload.get('expected_version') != draft.version:
@@ -294,6 +300,8 @@ class OrderingService:
         return self.draft_detail(draft, actor)
 
     def _evaluate(self, actor, draft, *, evaluated_at):
+        from app.services.run_sources import require_draft_source
+        require_draft_source(draft)
         items = self._draft_items(draft.id)
         final_quantities = {item.product_id: item.final_qty for item in items}
         manual_confirmations = tuple(item.product_id for item in items if item.manual_forecast_acknowledged)

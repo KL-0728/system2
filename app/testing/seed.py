@@ -1,4 +1,5 @@
 from datetime import timedelta
+from flask import current_app
 from app.extensions import db
 from app.models import Store, Product, Inventory, SalesDaily, SalesImportBatch, User, Order, ReplenishmentRun
 from app.services.clock import business_now, utc_naive
@@ -37,7 +38,8 @@ def seed_module_data(module):
     if module == 'D' and not db.session.execute(db.select(Order.id).where(Order.fixture_only.is_(True)).limit(1)).first():
         for store in db.session.execute(db.select(Store)).scalars():
             make_order(db.session, store_id=store.id)
-    if module == 'C' and not db.session.execute(db.select(ReplenishmentRun.id)
+    entry = current_app.extensions['service_providers'].get('runs')
+    if module == 'C' and entry and entry[1] and not db.session.execute(db.select(ReplenishmentRun.id)
             .where(ReplenishmentRun.model_version == 'controlled-test-v1').limit(1)).first():
         for store in db.session.execute(db.select(Store)).scalars():
             make_run(db.session, store_id=store.id)

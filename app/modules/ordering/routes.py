@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, g, jsonify, render_template, request
+from flask import Blueprint, g, jsonify, render_template, request
 
 from app.contracts import dto_dict
 from app.extensions import db
@@ -8,21 +8,10 @@ from app.services.access import authorize_store, require_role
 from app.services.errors import DomainError
 from app.services.orders import INTRO_VERSION, ordering_service
 from app.services.version import transaction
+from app.services.run_sources import latest_run
 
 
 bp = Blueprint('ordering', __name__)
-
-
-def latest_run(store_id):
-    # D's order factory is not a replenishment run for the C workbench.
-    statement = db.select(ReplenishmentRun).where(
-        ReplenishmentRun.store_id == store_id,
-        ReplenishmentRun.model_version != 'fixture-v1')
-    provider = current_app.extensions['service_providers'].get('runs')
-    if current_app.config['MODULE_DEV'] == 'C' and provider and provider[1]:
-        statement = statement.where(ReplenishmentRun.model_version == 'controlled-test-v1')
-    return db.session.execute(statement.order_by(
-        ReplenishmentRun.actual_generated_at.desc(), ReplenishmentRun.id.desc())).scalars().first()
 
 
 def _payload():
@@ -53,7 +42,9 @@ def ordering_page():
     resume = ordering_service.get_draft(g.user, draft_id) if draft_id else None
     if resume and (resume['store_id'] != store.id or resume['status'] != 'DRAFT'):
         raise DomainError('NOT_FOUND', '草稿不存在或已送出', 404)
-    run = db.session.get(ReplenishmentRun, resume['run_id']) if resume else latest_run(store.id)
+    source_message = resume.get('source_message') if resume else None
+    run = (db.session.get(ReplenishmentRun, resume['run_id']) if resume['source_available'] else None) \
+        if resume else latest_run(store.id)
     run_data = None
     if run:
         run_data = dto_dict(get_provider('runs').get_run(run_id=run.id, store_id=store.id,
@@ -66,7 +57,7 @@ def ordering_page():
     return render_template('store/ordering.html', store=store, run=run_data,
         intro_version=INTRO_VERSION,
         intro_status=ordering_service.acknowledgement_status(g.user), resume_draft=resume,
-        actor_id=g.user.id)
+        actor_id=g.user.id, source_message=source_message)
 
 
 @bp.get('/store/orders')
@@ -191,6 +182,9 @@ def list_orders():
 
 def _order_detail(order_id, include_fulfillment=True):
     store = _manager_store(request.args.get('store_id', type=int))
+    order = db.session.get(Order, order_id)
+    if not order or order.store_id != store.id or order.fixture_only:
+        raise DomainError('NOT_FOUND', '訂單不存在', 404)
     value = dto_dict(ordering_service.get_order(order_id=order_id, store_id=store.id,
         actor_id=g.user.id, session=db.session))
     if include_fulfillment:

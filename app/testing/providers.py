@@ -49,6 +49,8 @@ class ControlledIntegrity:
 
 
 class ControlledRuns:
+    run_model_versions = ('controlled-test-v1',)
+
     def __init__(self, scenario='normal'):
         self.scenario = scenario
 
