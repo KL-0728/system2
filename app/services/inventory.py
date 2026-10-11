@@ -14,7 +14,7 @@ from flask import current_app, g, has_request_context
 from app.contracts import IntegrityDTO, InventoryMutation, MovementResult, WarningDTO, quantity, require_utc
 from app.extensions import db
 from app.models import (AuditEvent, BusinessClock, CountSubmissionKey, Inventory, InventoryCount,
-    InventoryCountRevision, InventoryMovement, InventoryReconciliation, SalesDaily, Store, User)
+    InventoryCountRevision, InventoryMovement, InventoryReconciliation, SalesDaily, Store, User, PolicyVersion, StoreProduct)
 from app.services.clock import TAIPEI, aware, round_window, server_now, utc_naive
 from app.services.errors import DomainError
 from app.services.version import bump_store
@@ -94,6 +94,23 @@ def _snapshot(session, entity, action):
         raise DomainError('SOURCE_RESULT_UNAVAILABLE', '此來源缺少正式入帳快照，請先核對', 409)
     return event.new
 
+
+
+def _reconciliation_context(session, store_id, product_id, now):
+    """Freeze manager ownership and the applicable 24-hour default policy."""
+    policy = session.execute(db.select(PolicyVersion).join(StoreProduct,
+        StoreProduct.policy_version_id==PolicyVersion.id).where(
+        StoreProduct.store_id==store_id, StoreProduct.product_id==product_id)
+        .with_for_update(read=True)).scalar_one_or_none()
+    from app.seed import POLICY
+    parameters = policy.parameters if policy else POLICY
+    hours = parameters.get('variance_hours')
+    if type(hours) is not int or not 1<=hours<=8760:
+        raise DomainError('INVALID_POLICY','對帳期限政策須為1–8760整數小時',409)
+    return dict(responsible_role='manager',due_at=(now+timedelta(hours=hours)).isoformat(),
+        deadline_hours=hours,deadline_policy_version_id=policy.id if policy else None,
+        deadline_policy_version=policy.version if policy else None,
+        deadline_policy_source='store-policy' if policy else 'bootstrap-policy-v1')
 
 def _posted_day(session, store_id, product_id, cutoff, *, lock=False):
     query = db.select(SalesDaily).where(SalesDaily.store_id == store_id,
@@ -192,7 +209,8 @@ class InventoryService:
             if not pending:
                 session.add(InventoryReconciliation(store_id=store.id, product_id=row.product_id,
                     source_type='negative_book', source_id=f'movement:{movement.id}',
-                    reason='帳面可售量為負，須有效盤點或更正', status='OPEN', created_at=utc_naive(now)))
+                    reason='帳面可售量為負，須有效盤點或更正', status='OPEN', created_at=utc_naive(now),
+                    resolution=_reconciliation_context(session,store.id,row.product_id,now)))
             else:
                 # Keep the first case; clean up any duplicates from older writes.
                 for duplicate in pending[1:]:
@@ -200,13 +218,13 @@ class InventoryService:
                     duplicate.resolved_at = utc_naive(now)
                     duplicate.resolved_by = mutation.actor_id
                     duplicate.version += 1
-                    duplicate.resolution = {'consolidated_into': pending[0].id,
+                    duplicate.resolution = {**(duplicate.resolution or {}), 'consolidated_into': pending[0].id,
                         'movement_id': movement.id}
         else:
             for task in pending:
                 task.status, task.resolved_at, task.resolved_by = 'RESOLVED', utc_naive(now), mutation.actor_id
                 task.version += 1
-                task.resolution = {'movement_id': movement.id, 'reason': mutation.reason}
+                task.resolution = {**(task.resolution or {}), 'movement_id': movement.id, 'reason': mutation.reason}
         result = MovementResult(movement.id, row.version, store.calculation_version, physical, unsellable, False)
         saved_result = asdict(result)
         saved_result.pop('replayed')

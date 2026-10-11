@@ -13,7 +13,7 @@ from app.models import (Inventory, InventoryReconciliation, Product, SalesDaily,
 from app.services.clock import TAIPEI, aware, utc_naive
 from app.services.errors import DomainError
 from app.services.inventory import (_audit, _authorize, _business_now, _hash, _inventory,
-    _lock_store, _posted_day, _text, InventoryService)
+    _lock_store, _posted_day, _text, InventoryService, _reconciliation_context)
 from app.services.version import bump_store
 
 COLUMNS = ('source_batch_id', 'store_code', 'sku', 'business_date', 'sold_qty', 'was_stockout', 'is_open')
@@ -264,7 +264,8 @@ class SalesService:
                 session.add(InventoryReconciliation(store_id=store.id, product_id=item['product_id'],
                     source_type='sales_covered', source_id=f'sales-batch:{batch.id}:{item["business_date"]}',
                     reason=('已盤點涵蓋銷售更正，未回頭改目前庫存：' + data['reason'])[:500], status='OPEN',
-                    created_at=utc_naive(now), resolution={'business_date': item['business_date'], 'batch_id': batch.id}))
+                    created_at=utc_naive(now), resolution={**_reconciliation_context(session,store.id,item['product_id'],now),
+                        'business_date': item['business_date'], 'batch_id': batch.id}))
             session.add(row)
             session.flush()
             result_rows.append(dict(product_id=item['product_id'], business_date=item['business_date'],

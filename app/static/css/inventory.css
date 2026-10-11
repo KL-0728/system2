@@ -26,3 +26,7 @@
 @media (max-width: 740px) { .data-columns { grid-template-columns: 1fr; } .data-panel { padding: .9rem; } }
 
 .data-nav { display: flex; gap: 1rem; flex-wrap: wrap; margin: .8rem 0; }
+
+.operation-card { border-top: 1px solid var(--border); padding: .8rem 0; overflow-wrap: anywhere; }
+.operation-card pre { white-space: pre-wrap; word-break: break-word; }
+#reconciliation-target { font-weight: 600; overflow-wrap: anywhere; }

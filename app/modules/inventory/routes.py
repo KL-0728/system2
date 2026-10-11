@@ -103,7 +103,7 @@ def status():
         batches = db.session.execute(db.select(SalesImportBatch).where(SalesImportBatch.store_id == store.id)
             .order_by(SalesImportBatch.id.desc()).limit(30)).scalars().all()
         result = dict(store_id=store.id, code=store.code, store_version=store.calculation_version,
-            baseline_at=b.isoformat(), deadline_at=cutoff.isoformat(), items=items,
+            baseline_at=b.isoformat(), deadline_at=cutoff.isoformat(), business_now=business_now().isoformat(), items=items,
             batches=[dict(id=batch.id, source_batch_id=batch.source_batch_id, import_mode=batch.import_mode,
                 replaces_batch_id=batch.replaces_batch_id, created_at=aware(batch.created_at).isoformat()) for batch in batches])
     return jsonify(result)
@@ -176,3 +176,9 @@ register_replenishment_demo(bp)
 
 from app.modules.inventory.forecast_modes_demo import register_forecast_modes_demo
 register_forecast_modes_demo(bp)
+
+from app.modules.inventory.operations_routes import register_operations
+register_operations(bp, _store, _query_store, _payload, _time)
+
+from app.modules.inventory.operations_demo import register_operations_demo
+register_operations_demo(bp)

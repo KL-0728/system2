@@ -5,8 +5,8 @@
   const $ = id => document.getElementById(id);
   const storeId = Number(root.dataset.storeId);
   const storageKey = 'b02:' + root.dataset.actorId + ':' + storeId;
-  let status, csrf, preview, lastSales, lastCount, pending, busy = false;
-  const formControls = () => [...$('sales-form').elements, ...$('count-form').elements];
+  let status, csrf, preview, lastSales, lastCount, pending, operations, busy = false;
+  const formControls = () => [...$('sales-form').elements, ...$('count-form').elements, ...$('movement-form').elements];
   const say = (text, error = false) => {
     $('data-message').textContent = text;
     $('data-message').classList.toggle('error', error);
@@ -21,6 +21,9 @@
     $('commit-sales').disabled = busy || Boolean(pending) || !preview?.valid;
     $('repeat-sales').disabled = busy || Boolean(pending);
     $('repeat-count').disabled = busy || Boolean(pending);
+    $('repeat-movement').disabled = busy || Boolean(pending);
+    $('cancel-reconciliation').disabled = busy || Boolean(pending);
+    root.querySelectorAll('[data-task-action]').forEach(el=>{el.disabled=busy||Boolean(pending);});
     $('retry-pending').disabled = busy;
     $('recovery').hidden = !pending;
   };
@@ -79,6 +82,9 @@
     // Display an explicit offset; the service still enforces the fixed 21:00 cutoff.
     $('count-cutoff').value = status.baseline_at.replace('13:00:00+00:00', '21:00:00+08:00');
     fillCount();
+    const [tasks,movements]=await Promise.all([
+      api('/api/inventory/reconciliations?store_id='+storeId),api('/api/inventory/movements?store_id='+storeId)]);
+    operations.render(status,tasks,movements);
     $('batch-list').replaceChildren(...status.batches.map(batch => node('li', 'ID ' + batch.id + ' · ' + batch.source_batch_id + ' · ' + (batch.import_mode === 'historical' ? '歷史' : '日常') + (batch.replaces_batch_id ? ' · 取代 ID ' + batch.replaces_batch_id : ''))));
   };
   const invalidate = () => { preview = null; $('sales-preview').hidden = true; lock(); };
@@ -108,7 +114,10 @@
         lastSales = record; $('repeat-sales').hidden = false; preview = null;
         $('commit-sales').disabled = true;
         successMessage = (result.replayed ? '原批次結果已確認（沒有再次入帳）' : '整批提交成功') + '；批次 ID ' + result.batch_id + '；' + result.count + '列；本批帳面差額合計 ' + result.stock_delta + '件。';
+      } else if(record.kind==='movement') {
+        successMessage=operations.success(record,result);
       } else {
+        operations.success(record,result);
         lastCount = record; $('repeat-count').hidden = false;
         successMessage = (result.replayed ? '原盤點結果已確認（沒有再次套用差額）' : '盤點差額提交成功') + '；修訂 ' + result.revision + '；總量差額 ' + result.physical_delta + '件；目前帳面 ' + result.movement.physical_book + '件。';
       }
@@ -148,7 +157,7 @@
         reason: $('count-reason').value, correction,
         expected_count_version: correction ? item.count_version : null};
       if (body.unsellable_qty > body.physical_qty) throw new Error('不可販售量不得大於實體總量');
-      submitOriginal({kind: 'count', url: '/api/inventory/counts', body});
+      submitOriginal(operations.countRecord(body));
     } catch (error) { say(error.message, true); }
   });
   $('retry-pending').addEventListener('click', () => { if (pending) submitOriginal(pending); });
@@ -160,14 +169,15 @@
     catch (error) { say(error.message, true); }
     finally { busy = false; lock(); }
   });
+  operations=window.BInventoryOperations({getStatus:()=>status,submit:submitOriginal,fillCount,say,isBusy:()=>busy||Boolean(pending)});
   (async () => {
     busy = true; lock();
     try {
       const stored = sessionStorage.getItem(storageKey);
       if (stored) {
         const value = JSON.parse(stored);
-        if (value.body?.store_id === storeId && ['sales', 'count'].includes(value.kind)
-          && value.url === (value.kind === 'sales' ? '/api/sales/import/commit' : '/api/inventory/counts')) pending = value;
+        if (value.body?.store_id === storeId && (operations.validPending(value) ||
+          (['sales','count'].includes(value.kind) && value.url === (value.kind === 'sales' ? '/api/sales/import/commit' : '/api/inventory/counts')))) pending = value;
       }
       csrf = (await api('/api/auth/csrf')).csrf_token;
       await loadStatus(); lock();

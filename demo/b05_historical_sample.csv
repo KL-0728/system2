@@ -1,0 +1,2 @@
+source_batch_id,store_code,sku,business_date,sold_qty,was_stockout,is_open
+B05-2026-10-03-MISSING,B05DEMO,SKU04,2026-10-03,20,0,1

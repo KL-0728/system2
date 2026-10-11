@@ -1,5 +1,71 @@
 # B 模組交接
 
+## 2026-10-11 B05（目前狀態，以本節與下方B05列為準）
+
+請B現在依 [B01–B05完整人工指南](../b05-manual-testing.md) 操作並回報；人類實測尚未回報。本次只做B05後停下，不commit／push／開PR／合併main。以下B01–B04章節是歷史紀錄，並非目前仍停B04。
+
+- 開工已讀AGENTS.md、agent.md、spec.md、README.md及凍結docs/contracts.md v1。feat/b-module乾淨起始，git fetch origin --tags成功；git pull --ff-only回Already up to date。
+- HEAD與origin/feat/b-module：f5867b6bcd30d681e17070f831b99b18ee2eb624；測試版本是此SHA加未提交B05修改。origin/main=f2d5f67452ac249fe14a979a1433d69fa2802236；a03-parallel-v2發布提交=1744fbd01446597b3be6c552b991476d86950b75（annotated tag物件25994e3842da222bf45514f7588b0ed9abd5e273）。兩項ancestor檢查exit0，基準未變。
+- 保留既有B01–B04、所有門市與私有instance環境；未改spec、合約v1／凍結合約測試、A／C／D檔案、schema、migration、requirements或.env。
+- 新增app/services/inventory_operations.py、operations_routes.py：店長有來源與expected_version的報廢／退回，實體及不可售同減、不加H、原收貨保留；成功原請求先冪等重放，變更內容409。Store→Inventory→來源鎖、同caller交易，沒有服務內commit。
+- 對帳讀取及有效盤點處理：同時核對庫存／案件版本與request_key；negative_book差額15恢復H，sales_covered修訂差額0保留截止後收貨。處理結果保存actor、time、reason與盤點修訂id；未真的解除案件就整筆回滾。
+- B的inventory.py／sales.py補存新對帳的manager責任、政策variance_hours期限、政策版本；有效處理仍保留這些欄位，逾期不自動結案。使用既有resolution JSON，未新增表。極小fixture無StoreProduct時使用明載來源的bootstrap-policy-v1預設；正常配置保存實際政策版本。
+- B資料頁新增預覽／來源／唯讀異動與案件歷史、手機版、原請求重試與未知回應復原；送出／未知結果鎖定其他寫入，刷新仍可同鍵重試。最新100筆各自只讀查詢。
+- prepare-b05-demo只新增自己的B05DEMO／b05manager合成案例。初次利用正式B日常、盤點、更正、庫存服務；收貨仍明示合成來源。既有B05僅缺期限時補存自有合成案件 metadata／version與audit，其他門市、庫存、銷售、密碼、業務時鐘保留。
+- 新增正常／錯誤CSV、服務／真實MySQL併發／Edge測試、可回滾數字腳本、唯讀示範瀏覽器核對、完整指南及 [本機PR內文](B-pr.md)。
+- 對應V32／V33／V46／V48／V49的B側來源、差額與阻擋，V45僅B損壞品報廢／退回部分；V45子案件額度／補送併發及正式D閉環由A整合，不能填整條V通過。
+
+### 實際最終自測
+
+Python3.12、MySQL9.6 InnoDB 127.0.0.1:3308，system2_b01_demo／system2_b01_test隔離，migration head=884e7a53a8c8；Playwright1.63與真實Edge。
+
+在C:\Users\USER\Desktop\system2依序實際執行：
+
+~~~powershell
+. .\instance\b01-test-env.ps1
+$env:PYTHONIOENCODING='utf-8'
+.\.venv\Scripts\python.exe scripts/check_environment.py
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest tests/browser_inventory_operations.py tests/browser_inventory.py tests/browser_replenishment.py tests/browser_forecast_modes.py -q -p no:cacheprovider
+$env:APP_ENV='demo'
+$env:MODULE_DEV='B'
+.\.venv\Scripts\python.exe -m flask --app wsgi inventory prepare-b05-demo
+.\.venv\Scripts\python.exe tests/manual_inventory_operations.py
+.\.venv\Scripts\python.exe tests/manual_inventory_operations_browser.py
+$env:APP_ENV='test'
+.\.venv\Scripts\python.exe -m flask --app wsgi db check
+node --check app/static/js/inventory.js
+node --check app/static/js/inventory_operations.js
+git diff --check
+~~~
+
+- 環境兩行PASS；完整pytest：**2 failed, 303 passed in208.66s（305例）**，涵蓋B01–B05與凍結合約。新增B05服務31例均在此套通過，含真實兩連線MySQL來源競爭、交易回滾、CSRF、角色／門市拒絕、期限逾期仍OPEN。
+- 正式Edge最終：**17 passed in57.63s**（B05五例、B02六例、B03三例、B04三例），1280／390／320px及20px字體、報廢／退回／盤點對帳、原請求與回應遺失刷新復原、模型／人工／直接訂購；無skip或warnings summary。
+- manual_inventory_operations.py五行PASS：32/2/H30→30/0/H30、原收貨保留／同鍵只扣一次；雨衣-5→count10差額15、泡麵count20差額0保留book30；正式B模型Q24/42/15/null、manual5.125→Q13、direct1000容量1008/null無曲線；錯誤CSV整批拒絕、歷史補日不扣H8與重試／補全後Q42。最後所有服務寫入回滾，比對全部36表筆數、門市／庫存／銷售版本與時鐘不變。
+- manual_inventory_operations_browser.py兩行PASS：真實Edge以b05manager登入B05DEMO(id6)，初始32/2/H30、-5/Hnull、30/Hnull、8/H8；兩筆OPEN政策期限、他店404；手機資料／補貨畫面無JS error／水平溢出；所有表筆數／版本／時鐘保留。
+- db check：No new upgrade operations detected；兩支node --check exit0。git diff --check見最終差異核對（exit0；Git可能提示LF→CRLF，不是測試warnings）。
+- 截圖僅在Git忽略instance/browser-check：b05-operations-1280/390/320.png、b05-demo-start-390.png。不包含憑證。
+
+### 已知共用失敗與整合界線
+
+1. tests/test_contracts.py::test_no_silent_fallback假定runs未註冊；正式B已註冊runs，未拋原預期503。A需使未註冊測試情境明確，不能移除正式B服務或造fallback。
+2. tests/test_contracts.py::test_independent_module_boot[C-expected1]：A共用module_dev硬選controlled-test-v1/run_id0；正式B拒絕非自身有效快照，回422而非期待200。A需協調C開發入口與正式／受控provider使用。
+
+兩項自B03即已記錄，B04完整回歸仍失敗；本次未改凍結測試、未skip／xfail，沒有宣稱全套全綠。MODULE_DEV=B的D open_orders依然ControlledOpenOrders；正式B→C的隔離模組案例使用真實B與C，但D輸入受控。正式D接單／分批收貨／額度／未結量、A管理與全V人類驗收留A05／A06。
+
+### 組員現在操作與下一步
+
+依完整指南先確認身份與初始數量，再做報廢1／重試、退回越界3／合法1、兩筆盤點對帳、L1建議24/42/15、人工5.125→13、直接1000→1008、歷史CSV差額0、手機與門市拒絕。資料寫入保存在自己的B05DEMO，prepare-b05-demo不會重設。詳細正常／錯誤預期、來源追溯與可填回報均已列在指南。
+
+**人工實測：待B回報；PR：尚未建立，內文狀態Draft。** 本次不發布。可複製下一句：
+
+> 我是B，已依B01–B05指南實測f5867b6＋本機B05。報廢／退回／原請求重試【結果】、兩筆對帳【結果】、模型／人工／直接【結果】、CSV與手機／權限【結果】；失敗步驟與錯誤【內容】。請記錄，先不提交推送。
+
+人工確認及A協調後，再明確授權提交／推送／開Draft PR；不要現在標Ready或自行合併main。PR內文含可複製命令與審查範圍。本次在B05結束後等待指示。
+
+---
+
+
 ## 2026-10-11 B04（本次，停在 B04）
 
 - 已讀 AGENTS.md、agent.md、spec.md、README.md 及凍結 docs/contracts.md。開工 feat/b-module 乾淨；git fetch origin --tags 成功；git pull --ff-only 首次網路重設失敗、重試成功（Already up to date）。
@@ -128,8 +194,8 @@ git diff --check
 | B01 | 同交易庫存異動、來源唯一與重試、盤點差額／不可變修訂、H與入帳阻擋 | 前次全套121 passed；B＋合約70 passed；數字核對PASS；f2d5f67＋當時未提交修改 | B回報70 passed in 48.61s；其餘未回報 | 已由組員提交a139a7a，沿用 |
 | B02 | CSV整批驗證／提交／更正、歷史轉日常、防重扣、盤點／修訂畫面及回應遺失恢復 | 前次全套173 passed in 155.69s；真實Edge6 passed in 28.00s；a139a7a＋當時未提交修改 | 畫面人工結果尚未回報 | 已由組員提交5ca0263，沿用；保留前次證據 |
 | B03 | 七日品質／Decimal輸出／精確整箱、固定B及L、U/C/RISK、雙版時序／容量、不可變run查詢／明細、v1 runs註冊及畫面 | B03新增48例通過；全套219 passed／2 failed in 146.51s；Edge9 passed in26.29s；demo Edge PASS；5ca0263＋未提交B03 | 待B照B03指南實測 | 停在B03；兩個共用舊假設請A協調；不發布、不進B04 |
-| B04 | 人工預測追加修訂／期限／每輪確認、歷史註記info、特殊直接null與保守容量、庫存阻擋及B畫面 | b1b0637＋未提交B04；新增51例於全套通過；全套272 passed／2既有共用失敗；Edge12 passed in40.06s＋受影響6例重驗23.52s；demo PASS | 待B依本次B04指南實測 | 停在B04、不發布；兩項共用假設待A；B05未開始 |
-| B05 | 未開始 | 未執行 | 未執行 | 本次不授權 |
+| B04 | 人工預測追加修訂／期限／每輪確認、歷史註記info、特殊直接null與保守容量、庫存阻擋及B畫面 | b1b0637＋未提交B04；新增51例於全套通過；全套272 passed／2既有共用失敗；Edge12 passed in40.06s＋受影響6例重驗23.52s；demo PASS | 待B依本次B04指南實測 | 已由組員提交f5867b6；本次沿同分支完成B05；共用假設待A |
+| B05 | 損壞品同步移出／來源重試、有效盤點對帳、責任與政策期限、手機、種子數字與完整指南／PR內文 | f5867b6＋未提交B05；全套303 passed／2既有共用失敗208.66s；新增31例通過；Edge17 passed57.63s；demo數字5PASS＋唯讀Edge2PASS | 待B依B01–B05完整指南實測，未自動填通過 | B05本機完成；未提交／推送／開PR；Draft內文，共用失敗待A；停下等指示 |
 
 ## B03 改動與證據
 
