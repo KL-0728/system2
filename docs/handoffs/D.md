@@ -21,9 +21,9 @@ main 已包含正式 B／C。MODULE_DEV=D 的測試注入只補缺少的插槽�
 - 分支：feat/d-module；同分支連續 D01→D05，不等其他人成果合併。
 - 自己的入口：app/modules/fulfillment/routes.py、services.py 的 install()；業務 models／services 依 agent.md。
 - 開發模式：MODULE_DEV=D，外部替身 inventory_writer／orders；限獨立本機 demo DB，頁面明示來源。啟動、seed-module、check_module、合約測試與人工正常／錯誤步驟見 README「A03：B／C／D 各自開工」。
-- 實測版本：本機未提交修改，HEAD `9cf5d00`，無 D 模組提交。
+- 實測版本：本機分支 `feat/d-module` HEAD `c39497f`（D 模組已本機提交）；2026-10-13 專項加 Edge 瀏覽器測試 32 passed。提交前的全套 pytest 為 339 passed；後續修正的 ETA 時區序列化已含於 `c39497f`，目前尚未重跑全套。
 - AI 模組自測：2026-10-12 已建立本機 D 專用 MySQL 8.4、`system2_d_demo`／`system2_d_test`；兩項環境檢查 PASS，migration `db check` 無差異，`scripts/check_module.py D` PASS。`tests/test_fulfillment.py tests/test_fulfillment_rules.py tests/test_provider_integration.py -q` 30 passed；修正過期的「受控 D」文字斷言並補正式模式 fixture 阻擋測試後，全套 `pytest -q` **339 passed in 230.73s**。其後 Edge 真實瀏覽器 `tests/browser_fulfillment.py -q` 於 390px／1280px **2 passed**：驗接單、出貨、分次收貨與庫存 +2。390px 曾測出橫向溢出，修正 D CSS 後重驗通過。D MySQL root 管理登入已修復，密碼只在忽略的本機 `.env`，移除暫時恢復檔後標準腳本重啟、兩 DB 檢查 PASS。
-- 人工實測：未執行。
+- 人工實測：尚未由組員執行。自動 Edge 曾直接操作 D demo：DEMO1 已接單 30、原出貨 5、分次核對 2＋3（其中損壞 1），並授權補送 1；原出貨全數核對，補送尚未出貨，損壞差異仍 OPEN。DEMO1 飲料目前實體 25／不可售 1／可售 24。DEMO2 訂單仍 SUBMITTED、飲料 20／0／20。示範時鐘停於 2026-10-08 21:01 Asia/Taipei。不可再以全新資料的 20 件起點重跑 DEMO1。
 - PR：尚未建立。
 - 真實跨模組整合：待 A05；V 驗收待 A06。
 
