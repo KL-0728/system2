@@ -194,7 +194,7 @@ def test_additive_demo_uses_real_b_and_preserves_existing_rows(seeded, monkeypat
     store = db.session.execute(db.select(Store).where(Store.code == 'BCDEMO')).scalar_one()
     run = latest_run(store.id)
     assert run.model_version == 'sma7-periodic-v1'
-    assert '受控 D 未結來源' in text
+    assert '正式 D 未結來源' in text
     assert {row.id: (row.calculation_version, row.name) for row in db.session.execute(
         db.select(Store).where(Store.id.in_(existing))).scalars()} == existing
     dto = get_provider('runs').get_run(run_id=run.id, store_id=store.id,
