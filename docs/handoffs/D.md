@@ -21,10 +21,10 @@ main 已包含正式 B／C。MODULE_DEV=D 的測試注入只補缺少的插槽�
 - 分支：feat/d-module；同分支連續 D01→D05，不等其他人成果合併。
 - 自己的入口：app/modules/fulfillment/routes.py、services.py 的 install()；業務 models／services 依 agent.md。
 - 開發模式：MODULE_DEV=D，外部替身 inventory_writer／orders；限獨立本機 demo DB，頁面明示來源。啟動、seed-module、check_module、合約測試與人工正常／錯誤步驟見 README「A03：B／C／D 各自開工」。
-- 實測版本：本機分支 `feat/d-module` HEAD `c39497f`（D 模組已本機提交）；2026-10-13 專項加 Edge 瀏覽器測試 32 passed。提交前的全套 pytest 為 339 passed；後續修正的 ETA 時區序列化已含於 `c39497f`，目前尚未重跑全套。
+- 實測版本：本機分支 `feat/d-module`，D 模組程式起始提交 `c39497f`，UI 修正與完整瀏覽器驗收測試提交 `72ee6e6`；最新文件提交以 `git log -1 --oneline` 查詢。ETA 時區序列化已含於 `c39497f`；2026-10-13 以當前程式重跑全套 339 passed、Edge 4 passed。
 - AI 模組自測：本機 D 專用 MySQL 8.4、`system2_d_demo`／`system2_d_test` 環境檢查兩項 PASS，migration `db check` 無差異。2026-10-13 修正出貨按鈕易混淆與差異備註預填問題後，test DB 全套 `pytest -q` **339 passed in 230.38s**；`pytest tests/browser_fulfillment.py tests/browser_fulfillment_full.py -q` **4 passed in 25.45s**，Edge 實際驗了 DEMO1 接單、原訂與補送出貨、收貨、損壞、報廢、重複阻擋，DEMO2 提案、爭議、待查、短收、多送品、待辦及跨店／角色權限；390px／1280px 無橫向溢出。瀏覽器測試使用隔離 test DB 外層交易，完成回滾，不改 demo。JS 語法及 `git diff --check` 通過。D MySQL root 管理密碼只在忽略的本機 `.env`，標準腳本重啟已驗證。
 - 人工實測：尚未由組員確認完成。DEMO1 已接單 30、原出貨 5 並分次核對 2＋3（損壞 1），授權補送 1 尚未出貨；另有一批一般原訂出貨 1 待核對。飲料目前實體 25／不可售 1／可售 24。DEMO2 訂單仍 SUBMITTED、飲料 20／0／20。示範時鐘停於 2026-10-08 21:01 Asia/Taipei。完整續測數字見 d-manual-testing.md，勿重設或重新 seed。
-- PR：尚未建立。
+- PR：尚未建立。2026-10-13 `git push -u origin feat/d-module` 遭 GitHub HTTP 403 拒絕：目前 Git 憑證 `Jason-Tai` 對 `KL-0728/system2` 無寫入權限。已本機提交且無未提交程式；待有權限的 GitHub 連線後推送並開 Draft，不合併 main。
 - 真實跨模組整合：待 A05；V 驗收待 A06。
 
 | 階段 | 本次改動 | AI測試指令／結果／SHA | 人工步驟與結果 | 未完成／下一步 |
