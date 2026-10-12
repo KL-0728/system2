@@ -155,8 +155,8 @@
     }
     if (role === 'operator' && item.committed_qty > item.original_shipped_qty &&
         ['ACCEPTED', 'PARTIALLY_SHIPPED', 'PARTIALLY_RECEIVED', 'SHIPPED'].includes(item.status)) {
-      form(card, '出貨', f => {
-        field(f, 'quantity', '本批件數', 1, 'number');
+      form(card, '原訂出貨（非補送）', f => {
+        field(f, 'quantity', '本批原訂件數', 1, 'number');
         field(f, 'eta', '本批 ETA（含時區）', item.eta || item.requested_eta);
       }, (d, requestKey) => post(`orders/${current.order_id}/shipments`, {request_key: requestKey, lines: [{item_id: item.item_id,
         kind: 'original', quantity: Number(d.get('quantity')), eta: d.get('eta')}]}));
@@ -175,7 +175,7 @@
           field(f, 'sellable_qty', '可販售實收', remaining, 'number');
           field(f, 'damaged_qty', '損壞實收', 0, 'number');
           field(f, 'short_qty', '確認短收', 0, 'number');
-          field(f, 'note', '有差異時填原因', '正常收貨');
+          field(f, 'note', '有差異時填原因').required = false;
         }, (d, requestKey) => post(`shipments/${shipment.id}/receipts`, {request_key: requestKey, lines: [{shipment_item_id: line.id,
           checked_qty: Number(d.get('checked_qty')), sellable_qty: Number(d.get('sellable_qty')),
           damaged_qty: Number(d.get('damaged_qty')), short_qty: Number(d.get('short_qty')),

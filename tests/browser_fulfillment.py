@@ -51,7 +51,7 @@ def test_accept_ship_and_partial_receive_in_edge(fulfillment_server, width):
         page.locator('#fulfillment-order').select_option(str(order_id))
         page.locator('form').filter(has=page.get_by_role('button', name='完整接單')).get_by_role('button').click()
         page.get_by_text('承諾 5 件').wait_for()
-        shipping = page.locator('form').filter(has=page.get_by_role('button', name='出貨', exact=True))
+        shipping = page.locator('form').filter(has=page.get_by_role('button', name='原訂出貨（非補送）', exact=True))
         shipping.locator('[name=quantity]').fill('5')
         shipping.get_by_role('button').click()
         page.get_by_text('待核對 5').wait_for()
