@@ -7,6 +7,11 @@
   let modeControls;
   const node = (tag, text) => { const el = document.createElement(tag); el.textContent = text; return el; };
   const local = value => new Date(value).toLocaleString('zh-TW', {timeZone: 'Asia/Taipei', hour12: false});
+  // Format only the visible metrics; keep run data at its original precision.
+  const decimalFormat = new Intl.NumberFormat('zh-TW', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false
+  });
+  const displayDecimal = (value, fallback) => value == null ? fallback : decimalFormat.format(value);
   const say = (text, error = false) => { $('run-message').textContent = text; $('run-message').classList.toggle('error', error); };
   const api = async (url, data) => {
     const response = await fetch(url, data ? {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
@@ -69,8 +74,8 @@
       card.append(node('h3', item.input_snapshot.product_name + ' · ' + item.input_snapshot.sku + ' · 箱入 ' + item.pack_size + '件'));
       const sums = {U: 0, C: 0, RISK: 0}; item.sources.forEach(s => { sums[s.bucket] += s.quantity; });
       const metrics = node('div', ''); metrics.className = 'run-metrics';
-      for (const [label, value] of [['可用現貨', item.h ?? '不可用'], ['預估日銷量', item.mu ?? (item.mode==='direct'?'無法計算':'無有效預測')],
-        ['目標庫存', item.target_stock ?? '無法計算'], ['整箱前需求', item.raw_qty ?? '無法計算'],
+      for (const [label, value] of [['可用現貨', item.h ?? '不可用'], ['預估日銷量', displayDecimal(item.mu, item.mode==='direct'?'無法計算':'無有效預測')],
+        ['目標庫存', displayDecimal(item.target_stock, '無法計算')], ['整箱前需求', displayDecimal(item.raw_qty, '無法計算')],
         ['建議量', item.suggested_qty === null ? (item.mode==='direct'?'無法計算':'無有效建議') : item.suggested_qty + '件'],
         ['待接單／已承諾未到貨', sums.U + '／' + sums.C], ['未扣抵風險量', sums.RISK]]) {
         const cell = node('div', label); cell.className = 'run-metric'; cell.append(node('strong', String(value))); metrics.append(cell);

@@ -1,5 +1,49 @@
 # B 模組交接
 
+## 2026-10-14 B03／B04 顯示補修：fix/b-display
+
+- 後續發布授權：使用者明確要求「請直接幫我合併到main」，沿用本會話已確認的 A／組長授權，由 A 核對此補修後提交、合併及推送 main。以下「本機未提交」與 PR 建議記錄初次交接狀態；最終發布 SHA、合併後測試與遠端 CI 以交付回覆及 Git 紀錄為準，不代填人工驗收。
+
+- 使用者本次指定 B 補貨頁顯示修正，分支 `fix/b-display`，不直接推 main。已 fetch、pull --ff-only；HEAD／origin/main 基準均為 `2e32765`，開工工作目錄乾淨。A03 v2 與 origin/main 祖先檢查均為 exit 0，合約 v1 不變。
+- `app/static/js/replenishment.js`：只有「預估日銷量」「目標庫存」「整箱前需求」透過 `Intl.NumberFormat` 顯示為小數兩位，不加千分位；格式化不寫回 run。避免 `toFixed` 將有效人工值5.135顯示成5.13的浮點邊界，應為5.14。API、運算、快照、整箱建議、庫存、種子與時鐘保持原行為，無 schema／migration／依賴變更。對應 spec 6.1–6.2 的保留精度規則與 V29 明細呈現。
+- `tests/browser_replenishment.py`：新增 1280／390／320px 真實 Edge 案例，以七日銷售 18、22、20、19、21、20、2（總和122）經真實 B 服務產生 μ；D 未結量使用明確受控 pending 12。H=8、L=1、SS=10、箱6，畫面應為 17.43／44.86／24.86，整箱仍30。生成、試算、讀回後 API 與快照保留原精度，DB μ 保留12位小數；另驗零值0.00、缺資料提示、無 JS error／頁面水平溢出。
+- 示範／測試 DB 唯讀前置均 PASS：既有 `127.0.0.1:3307/system2_a_demo`／`system2_a_test`，migration `884e7a53a8c8`。所有新增資料僅在 test DB 外層交易，結束回滾；未更動既有 demo 或錄影資料。這是既有 checkout 的隔離測試庫，不宣稱建立新的 B 環境。
+- 精準新增瀏覽器測試：`pytest -q tests/browser_replenishment.py -k decimal -p no:cacheprovider --tb=short` → **3 passed, 3 deselected in 9.49s**。Node 語法檢查與 `git diff --check` exit 0。
+- 完整 B／合約／瀏覽器回歸：下方完整命令 → **274 passed in 219.65s**（254後端／合約、20瀏覽器）；其後只調整前端四捨五入格式化與新增5.135邊界，重跑 `pytest -q tests/browser_replenishment.py tests/browser_forecast_modes.py -p no:cacheprovider --tb=short` → **9 passed in 28.17s**。最終桌面／手機均測到122/7→17.43及人工5.135→5.14，後端值仍5.135，無失敗或 skip／xfail。最終 Node 語法與差異檢查亦 exit 0。
+- 截圖在 Git 忽略的 `instance/browser-check/b-display-1280.png`、`b-display-390.png`、`b-display-320.png`；未加入憑證或私密資料。
+
+### 可重現檢查與人工核對
+
+在本工作目錄另開 PowerShell；不用停止原本 Flask，不用 seed／reset 或調整 demo 時鐘。測試會另啟動動態埠的 test 應用，自行以合成 manager1 帳號操作 `/store/replenishment`，不依賴預覽5000的帳密。
+
+```powershell
+.\.venv\Scripts\python.exe scripts/check_environment.py --database both
+.\.venv\Scripts\python.exe -m pytest -q tests/browser_replenishment.py -k decimal -p no:cacheprovider --tb=short
+.\.venv\Scripts\python.exe -m pytest -q tests/test_inventory.py tests/test_sales.py tests/test_replenishment.py tests/test_forecast_modes.py tests/test_inventory_operations.py tests/test_contracts.py tests/browser_replenishment.py tests/browser_inventory.py tests/browser_inventory_operations.py tests/browser_forecast_modes.py -p no:cacheprovider --tb=short
+.\.venv\Scripts\python.exe -m pytest -q tests/browser_replenishment.py tests/browser_forecast_modes.py -p no:cacheprovider --tb=short
+node --check app/static/js/replenishment.js
+git diff --check
+```
+
+1. 確認分支 `fix/b-display`、基準 `2e32765` 加本次未提交差異。執行環境檢查 → demo／test 均 PASS，不能清理或重設 demo。
+2. 執行精準瀏覽器測試，開啟三張 `b-display-{width}.png` 核對 SKU01 → 預估日銷量17.43、目標庫存44.86、整箱前需求24.86、建議30件。測試也逐項確認試算與讀回仍相同、API μ 仍以17.428571開頭、快照完全相同。
+3. 核對 SKU02 零銷售 → 日銷量0.00；SKU03 缺一天 → 無有效預測／無法計算，不能變成0.00。測試最後將SKU02切為人工預測5.135並主動確認 → 畫面5.14、API仍5.135。桌面與兩種手機寬度均不應水平溢出。
+4. 執行完整回歸及語法／差異檢查 → 全通過。實測失敗請回報被測版本、步驟、實際數字與預期數字；不貼本機密碼。
+
+### 發布狀態及可複製 PR 文字
+
+本次成果為 **`2e32765` 加本機未提交修改**；尚未提交、推送或建立 PR，main 未變更。人工實測待 B 回報，不以 AI 自測代填人類驗收。第1點 seed 時鐘由 A 處理；第2點每日推時鐘後準備輪次的設計未變更。
+
+人工核對後可貼給 Codex：
+
+> 我是B，已核對 fix/b-display 的顯示與零值／缺資料情境，結果【填入】。請只提交本次 B 顯示修正及交接檔，推送 fix/b-display，建立交給 A 審核的 PR，不合併 main。
+
+PR 標題：`fix(B): 補貨頁三項計算數字顯示至小數兩位`
+
+PR 內容：補貨頁原先直接顯示完整小數。現在僅預估日銷量、目標庫存、整箱前需求固定顯示兩位，122/7 顯示17.43；API、運算與不可變快照保持原精度。B03／B04補修，基準2e32765、合約v1，無模型／migration／依賴／設定變更。真實Edge1280／390／320測生成、試算、歷次讀回，核對零值、缺資料提示、整箱30與原快照；D輸入限測試使用受控pending12，不宣稱新跨模組真實驗收。完整測試指令／結果、截圖位置及重現步驟見本交接。人工結果由B填入；未完成維持Draft，A依原B PR #3範圍核對後審核合併。
+
+---
+
 ## A 協調更新：2026-10-11
 
 - B 的 [PR #3](https://github.com/KL-0728/system2/pull/3) 已由使用者合併；B head=952d99f，合併 main=527ba2e。下方「尚未提交／未建立 PR」屬當時歷史，不是目前 GitHub 狀態。
