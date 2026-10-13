@@ -1,12 +1,33 @@
+{% from 'components/icons.html' import icon %}
+{% set auth_page = request.endpoint in ('auth.login_page', 'auth.login') %}
+{% set selected_store = store if store is defined and store else navigation_store %}
 <!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}統家便利店{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}"></head>
-<body><header class="site-header"><a href="/" class="site-brand">統家便利店<span>補貨協作系統</span></a>
-{% if current_user %}<div class="account-menu"><span class="account-name">{{ current_user.username }}</span>{% if current_user.role == 'admin' %}<a href="{{ url_for('management.page') }}">管理設定</a>{% endif %}{% if current_user.role in ('operator', 'admin') %}<a href="{{ url_for('fulfillment.headquarters_page') }}">接單履約</a>{% endif %}<a href="/">回首頁</a>
-<form class="logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logout-button">登出</button></form></div>{% endif %}</header>
-{% if business_time %}<aside role="status">示範時間：{{ business_time.strftime('%Y-%m-%d %H:%M:%S %Z') }} · 合成資料／示範帳號，請勿共用正式帳號</aside>{% endif %}
-{% if module_dev %}<aside class="warning">模組開發模式 {{ module_dev }} · 非真實跨模組整合。實際服務與資料來源見模組檢查頁。</aside>{% endif %}
-<main>{% if store is defined and store %}{% include 'store/_nav.html' %}{% endif %}{% block content %}{% endblock %}</main>
-<script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/password-visibility.js') }}" defer></script></body></html>
+<title>{% block title %}統家便利店 · 營運協作平台{% endblock %}</title>
+<link rel="stylesheet" href="{{ asset_url('css/app.css') }}"></head>
+<body class="{% if auth_page %}auth-page{% elif current_user %}workspace-page{% else %}public-page{% endif %}">
+<a class="skip-link" href="#main-content">跳到主要內容</a>
+<header class="site-header">
+<a href="/" class="site-brand"><span class="brand-mark" aria-hidden="true">統</span><span class="brand-name">統家便利店<small>營運協作平台</small></span></a>
+{% if current_user and not auth_page %}<div class="account-menu"><span class="role-chip">{{ {'manager':'門市店長','operator':'供貨營運','admin':'系統管理'}.get(current_user.role, '使用者') }}</span><span class="account-name">{{ current_user.username }}</span>
+<form class="logout-form" method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logout-button">登出</button></form></div>
+{% else %}<span class="portal-label">門市 × 供貨協作</span>{% endif %}
+</header>
+<div class="workspace-layout">
+{% if current_user and not auth_page %}<aside class="workspace-sidebar" aria-label="工作區導覽">
+<p class="nav-group-title">工作區</p>
+<a class="workspace-link" href="/" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>{{ icon('home') }}<span>營運總覽</span></a>
+{% if selected_store %}<div class="store-identity"><small>目前門市</small><strong>{{ selected_store.name }}</strong><span>{{ selected_store.code }}</span></div>{% endif %}
+{% if selected_store and current_user.role in ('manager','admin') %}{% with store=selected_store %}{% include 'store/_nav.html' %}{% endwith %}{% endif %}
+{% if current_user.role in ('operator','admin') %}<a class="workspace-link" href="{{ url_for('fulfillment.headquarters_page') }}" {% if request.endpoint == 'fulfillment.headquarters_page' %}aria-current="page"{% endif %}>{{ icon('box') }}<span>接單履約</span></a>{% endif %}
+{% if current_user.role == 'admin' %}<p class="nav-group-title">管理</p><a class="workspace-link" href="{{ url_for('management.page') }}" {% if request.endpoint == 'management.page' %}aria-current="page"{% endif %}>{{ icon('settings') }}<span>管理設定</span></a>{% endif %}
+<p class="sidebar-note">每次調整與確認<br>都有紀錄可追溯</p></aside>{% endif %}
+<div class="workspace-content">
+{% if business_time %}<aside class="environment-bar" role="status"><span class="environment-tag">示範環境</span><span>示範時間：{{ business_time.strftime('%Y-%m-%d %H:%M:%S') }} · 台北</span><span class="environment-note">使用示範資料</span></aside>{% endif %}
+{% if module_dev %}<aside class="module-warning">模組開發模式 {{ module_dev }} · 非真實跨模組整合；此模式使用受控測試資料。</aside>{% endif %}
+<main id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
+{% if not auth_page %}<footer class="workspace-footer">統家便利店 · 營運協作平台<span>補貨・供貨・收貨，資訊一致</span></footer>{% endif %}
+</div></div>
+<link rel="stylesheet" href="{{ asset_url('css/operations.css') }}">
+<script src="{{ asset_url('js/local-time.js') }}" defer></script>
+<script src="{{ asset_url('js/password-visibility.js') }}" defer></script></body></html>

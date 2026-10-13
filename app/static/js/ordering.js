@@ -131,6 +131,10 @@
     row.classList.toggle('is-excluded', excluded);
     const state = row.querySelector('[data-item-state]');
     if (state) state.textContent = excluded ? '本次不訂 · 0件' : '';
+    const adjustment = row.querySelector('.adjustment-details');
+    const modified = Number(row.querySelector('[data-field="final_qty"]').value) !== Number(row.dataset.suggested);
+    if (adjustment && (modified || row.querySelector('[data-field="reason_code"]')?.value
+        || row.querySelector('[data-field="reason"]')?.value.trim())) adjustment.open = true;
   }
 
   function requestExclusion(row, fromPreview = false) {
@@ -398,6 +402,7 @@
       introButton.disabled = false;
     }
   });
+  if (introButton) introButton.disabled = false;
 
   byId('product-search')?.addEventListener('input', (event) => {
     const query = event.target.value.trim().toLocaleLowerCase('zh-Hant');

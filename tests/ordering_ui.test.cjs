@@ -36,7 +36,9 @@ function page(initialQuantity) {
   row.dataset = {productId: '1', suggested: '30'};
   const name = element(); name.textContent = '飲料';
   const state = element();
+  const adjustment = element(); adjustment.open = false;
   row.querySelector = selector => selector === '.comparison' ? element() :
+    selector === '.adjustment-details' ? adjustment :
     selector === '[data-product-name]' ? name : selector === '[data-item-state]' ? state :
     selector.startsWith('[data-error') ? error : fields[selector.match(/"([^"]+)"/)[1]];
   fields.final_qty.closest = () => row;

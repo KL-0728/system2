@@ -1,0 +1,12 @@
+{% macro icon(name) -%}
+<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{% if name == 'home' %}<path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/>
+{% elif name == 'box' %}<path d="m3 7 9-4 9 4-9 5Z M3 7v10l9 4 9-4V7 M12 12v9 M7 5l10 5"/>
+{% elif name == 'orders' %}<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6 M9 12h6 M9 16h4"/>
+{% elif name == 'receive' %}<path d="M4 14v6h16v-6 M12 3v12 m-5-5 5 5 5-5"/>
+{% elif name == 'settings' %}<path d="M4 7h16 M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor"/><circle cx="15" cy="17" r="3" fill="currentColor"/>
+{% elif name == 'data' %}<path d="M5 20V10 M12 20V4 M19 20v-7 M3 20h18"/>
+{% elif name == 'shield' %}<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z m-4 9 3 3 5-6"/>
+{% else %}<path d="M5 12h14 m-5-5 5 5-5 5"/>{% endif %}
+</svg>
+{%- endmacro %}

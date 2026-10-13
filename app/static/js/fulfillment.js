@@ -103,7 +103,7 @@
     if (sequence !== loadSequence) return;
     current = loaded;
     detail.replaceChildren();
-    detail.append(node('p', `${order.selectedOptions[0]?.textContent || '訂單'} · ${current.fixture_only ? '獨立測試資料' : '正式送單'}`));
+    detail.append(node('p', `${order.selectedOptions[0]?.textContent || '訂單'}${current.fixture_only ? ' · 獨立測試資料' : ''}`));
     const tasks = node('article', '');
     tasks.append(node('h2', '我的待辦'));
     const openTasks = current.tasks.filter(t => !t.completed_at);

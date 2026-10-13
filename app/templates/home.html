@@ -1,35 +1,37 @@
 {% extends 'base.html' %}
-{% block title %}門市首頁｜統家便利店{% endblock %}
+{% block title %}營運總覽 · 統家便利店{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ordering.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/ordering.css') }}">
 {% if current_user %}
-<h1>{{ store.name if store else '協作首頁' }}</h1>
-<p>已登入：{{ current_user.username }}。先調整數量，再核對本單，最後確認送出。</p>
-{% if store %}
-<p>本輪盤點與計算基準：21:00 · 訂貨截止：{{ store.cutoff.strftime('%H:%M') }}（台北時間）</p>
-{% if tasks %}<section class="panel"><h2>待處理事項（{{ tasks|length }}）</h2>
-{% set task_names = {'respond_order':'回覆接單','receive_shipment':'核對收貨','investigate_shipment':'查明到貨','respond_change':'回覆供貨變更','resolve_variance':'處理收貨差異','contact_headquarters':'聯絡統家','resolve_extra':'處理多送品'} %}
-{% for task in tasks[:5] %}<p>{{ task_names.get(task.type, '待處理作業') }} · 期限 <time data-local-time="{{ task.due_at }}">{{ task.due_at }}</time>{% if task.overdue %} · <strong>已逾期</strong>{% endif %}</p>{% endfor %}
-<a href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">查看全部待辦</a></section>{% endif %}
-<div class="home-actions">
-  <section class="panel"><h2>今天的補貨</h2>
-    {% if ordering_available and run %}
-    <p>資料更新：<time data-local-time="{{ run.actual_generated_at.isoformat() }}Z">{{ run.actual_generated_at }}</time></p>
-    <a class="button-link" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">開始補貨</a>
-    {% elif ordering_available %}<p>本店尚無可用建議。先核對銷售與庫存，再產生本輪補貨建議。</p>
-    <a class="button-link" href="{{ url_for('inventory.replenishment_page', store_id=store.id) }}">準備補貨建議</a>
-    {% else %}<p>補貨建議服務尚未備妥。請先完成資料準備。</p>{% endif %}
-  </section>
-  <section class="panel"><h2>查詢已送出的訂單</h2><p>查看訂量、特殊需求與確認紀錄。</p>
-    <a class="button-link secondary" href="{{ url_for('ordering.orders_page', store_id=store.id) }}">查看訂單</a></section>
+<header class="dashboard-heading"><div><p class="eyebrow">{{ store.code ~ ' · 門市工作區' if store else '供貨協作工作區' }}</p>
+<h1>{{ store.name if store else '營運總覽' }}</h1><p>從今天需要處理的事項開始，掌握補貨、供貨與收貨進度。</p></div>
+{% if store %}<div class="dashboard-cycle"><span>每日盤點與補貨基準</span><strong>21:00 — {{ store.cutoff.strftime('%H:%M') }}</strong><span>台北時間 · 截止前完成送單</span></div>{% endif %}</header>
+<div class="metric-grid" aria-label="作業摘要">
+<section class="metric-card{% if tasks %} attention{% endif %}"><small>待處理事項</small><strong>{{ tasks|length }}</strong><span>{{ tasks|selectattr('overdue')|list|length }} 項已逾期</span></section>
+<section class="metric-card"><small>待回覆訂單</small><strong>{{ summary.pending }}</strong><span>待接單或供貨變更</span></section>
+<section class="metric-card"><small>收貨進行中</small><strong>{{ summary.receiving }}</strong><span>已出貨或分批核對</span></section>
+<section class="metric-card"><small>{{ '我的草稿' if store else '訂單總數' }}</small><strong>{{ summary.drafts if store else summary.orders }}</strong><span>{{ '保留未送出的訂購內容' if store else '目前啟用門市的訂單' }}</span></section>
 </div>
-<section class="panel"><h2>繼續未送出的草稿</h2>
-{% for draft in drafts %}<p class="draft-link"><span>草稿 #{{ draft.id }}</span>
-  <a href="{{ url_for('ordering.ordering_page', store_id=store.id, draft_id=draft.id) }}">繼續編輯</a></p>
-{% else %}<p>目前沒有未送出的草稿。</p>{% endfor %}
+<div class="dashboard-grid">
+<section class="panel"><div class="dashboard-section-heading"><h2>待處理事項{% if tasks %}（{{ tasks|length }}）{% endif %}</h2>
+{% if store %}<a href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">查看全部待辦</a>{% endif %}</div>
+{% set task_names = {'respond_order':'回覆接單','receive_shipment':'核對收貨','investigate_shipment':'查明到貨','respond_change':'回覆供貨變更','resolve_variance':'處理收貨差異','contact_headquarters':'聯絡統家','resolve_extra':'處理多送品'} %}
+{% for task in tasks[:5] %}<div class="task-row"><div><strong>{{ task_names.get(task.type, '待處理作業') }}</strong><small>期限 <time data-local-time="{{ task.due_at }}">{{ task.due_at }}</time></small></div><span class="status-chip{% if task.overdue %} overdue{% endif %}">{{ '已逾期' if task.overdue else '待處理' }}</span></div>
+{% else %}<div class="empty-state"><strong>目前沒有待處理事項</strong><p>接單、供貨變更與收貨需要您處理時，會集中顯示在這裡。</p></div>{% endfor %}
 </section>
-<section class="panel compact"><h2>收貨與供貨待辦</h2><p>核對分批實收、供貨變更及待處理差異。</p><a class="button-link secondary" href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">處理收貨與待辦</a></section>
-{% else %}<p>查看門市訂單、回覆供貨條件並登記出貨。</p><a class="button-link" href="{{ url_for('fulfillment.headquarters_page') }}">前往接單履約</a>{% endif %}
+<section class="panel"><div class="dashboard-section-heading"><h2>{{ '今天的補貨' if store else '供貨作業' }}</h2></div>
+{% if store %}<div class="dashboard-action-card">{{ icon('box') }}<div><h3>{{ '繼續本輪訂購' if ordering_available and run else '準備補貨建議' }}</h3>
+{% if ordering_available and run %}<p>最近資料更新：<time data-local-time="{{ run.actual_generated_at.isoformat() }}Z">{{ run.actual_generated_at }}</time></p><a class="button-link" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">開始補貨</a>
+{% elif ordering_available %}<p>先核對銷售與庫存，再產生本輪建議，確認後才會建立訂單。</p><a class="button-link" href="{{ url_for('inventory.replenishment_page', store_id=store.id) }}">準備補貨建議</a>
+{% else %}<p>補貨服務目前無法使用，請聯絡管理者。</p>{% endif %}</div></div>
+<div class="dashboard-action-card">{{ icon('receive') }}<div><h3>收貨與供貨待辦</h3><p>依實際到貨核對，追蹤分批收貨與差異處理。</p><a href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">處理收貨與待辦 →</a></div></div>
+{% else %}<div class="dashboard-action-card">{{ icon('orders') }}<div><h3>回覆門市與安排出貨</h3><p>核對原訂量、承諾與到貨時間，逐項回覆並保留處理紀錄。</p><a class="button-link" href="{{ url_for('fulfillment.headquarters_page') }}">前往接單履約</a></div></div>{% endif %}
+</section>
+{% if store %}<section class="panel"><div class="dashboard-section-heading"><h2>繼續未送出的草稿</h2></div>
+{% for draft in drafts %}<div class="draft-link"><span>草稿 #{{ draft.id }} · <time data-local-time="{{ draft.updated_at.isoformat() }}Z">{{ draft.updated_at }}</time></span><a href="{{ url_for('ordering.ordering_page', store_id=store.id, draft_id=draft.id) }}">繼續編輯 →</a></div>
+{% else %}<p class="muted">目前沒有草稿。開始補貨後，未送出的內容可儲存並稍後繼續。</p>{% endfor %}</section>
+<section class="panel"><div class="dashboard-section-heading"><h2>訂單與決策紀錄</h2></div><p>查看原訂量、承諾、出貨與實收數量，也能回看當時的建議與調整理由。</p><a class="button-link secondary" href="{{ url_for('ordering.orders_page', store_id=store.id) }}">查看訂單</a></section>{% endif %}
+</div>
 {% if module_dev %}<p><a href="/modules/{{ module_dev|lower }}/">{{ module_dev }} 模組資料檢查</a></p>{% endif %}
-{% else %}<h1>補貨協作系統</h1><p>登入後查看門市補貨與訂單。</p><a class="button-link" href="/login">登入</a>{% endif %}
+{% else %}<section class="panel empty-state"><h1>營運協作平台</h1><p>登入您的工作區，查看門市補貨、供貨與收貨進度。</p><a class="button-link" href="/login">登入</a></section>{% endif %}
 {% endblock %}

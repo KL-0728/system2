@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}補貨工作台｜統家便利店{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ordering.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/ordering.css') }}">
 
 <header class="page-heading">
   <div><p class="eyebrow">{{ store.code }}</p><h1>每日補貨工作台</h1></div>
@@ -34,7 +34,7 @@
   <h2 id="intro-title">首次使用說明</h2>
   <p>系統依目前可取得的庫存、歷史銷售與設定產生補貨建議。預測可能與實際需求不同，也不一定包含您已知的活動或團體訂購。請核對資料、查看警示，依門市情況調整後確認送出。系統將保存建議、調整與確認紀錄；統家接單後才會確認供貨條件。</p>
   <label class="check-row"><input id="intro-ack" type="checkbox"><span>我已了解建議的用途、限制及送單確認流程。</span></label>
-  <button id="intro-submit" type="button">確認並進入補貨</button>
+  <button id="intro-submit" type="button" disabled>確認並進入補貨</button>
   <p class="field-error" id="intro-error" role="alert"></p>
 </section>
 {% else %}
@@ -83,12 +83,12 @@
           <div class="item-actions"><button type="button" class="secondary" data-item-action="restore" {% if item.suggested_qty is none %}disabled{% endif %}>恢復建議量{% if item.suggested_qty is not none %} {{ item.suggested_qty }}{% endif %}</button>
           <button type="button" class="secondary" data-item-action="exclude">本次不訂</button></div>
         </div>
-        <div class="reason-cell"><label>調整原因
+        <div class="reason-cell"><details class="adjustment-details" {% if item.mode in ('manual','direct') or item.warnings|rejectattr('level','equalto','info')|list|length %}open{% endif %}><summary>調整原因與補充說明<span class="optional-label">修改數量或重要例外時填寫</span></summary><div class="adjustment-fields"><label>調整原因
           <select data-field="reason_code">
             <option value="">未調整</option><option value="promotion">促銷</option><option value="local_demand">在地需求</option>
             <option value="display">陳列調整</option><option value="reduce_stock">降低庫存</option><option value="skip">本次不訂</option><option value="other">其他</option>
           </select></label>
-          <label>補充說明 <span class="optional-label">一般調整選填；重要例外至少10字</span><textarea data-field="reason" rows="1" maxlength="500" placeholder="例如：社區活動需要商品，已安排現場交付"></textarea></label>
+          <label>補充說明 <span class="optional-label">一般調整選填；重要例外至少10字</span><textarea data-field="reason" rows="1" maxlength="500" placeholder="例如：社區活動需要商品，已安排現場交付"></textarea></label></div></details>
           <p class="field-error" data-error-for="item" role="alert"></p>
           {% if item.mode == 'manual' %}
           <p>人工預測：每日 {{ item.mu }} 件；有效至 {{ item.manual_forecast.valid_until if item.manual_forecast else '未提供' }}</p>
@@ -154,5 +154,5 @@
 {% endif %}
 
 {% if run %}<script id="ordering-bootstrap" type="application/json">{{ {'store_id': store.id, 'actor_id': actor_id, 'run': run, 'resume_draft': resume_draft}|tojson }}</script>{% endif %}
-<script src="{{ url_for('static', filename='js/ordering.js') }}" defer></script>
+<script src="{{ asset_url('js/ordering.js') }}" defer></script>
 {% endblock %}

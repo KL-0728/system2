@@ -1,6 +1,8 @@
 from decimal import Decimal
 from uuid import uuid4
 from datetime import datetime
+from hashlib import sha256
+from pathlib import Path
 from flask import Flask, g, jsonify, render_template, request, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_wtf.csrf import CSRFError
@@ -26,6 +28,11 @@ class JSONProvider(DefaultJSONProvider):
 def create_app(overrides=None):
     app = Flask(__name__)
     app.config.update(settings(overrides))
+    asset_root = Path(app.static_folder)
+    asset_versions = {path.relative_to(asset_root).as_posix(): sha256(path.read_bytes()).hexdigest()[:12]
+        for path in asset_root.rglob('*') if path.is_file()}
+    app.jinja_env.globals['asset_url'] = lambda filename: url_for('static', filename=filename,
+        v=asset_versions.get(filename, '1'))
     app.json = JSONProvider(app)
     db.init_app(app)
     migrate.init_app(app, db)
@@ -91,8 +98,16 @@ def create_app(overrides=None):
                 business_time = business_now().astimezone(TAIPEI)
             except (DomainError, SQLAlchemyError):
                 db.session.rollback()  # Recovery pages must survive clock/DB unavailability.
+        user = getattr(g, 'user', None)
         return {'business_time': business_time, 'module_dev': app.config['MODULE_DEV'],
-            'current_user': getattr(g, 'user', None)}
+            'current_user': user, 'navigation_store': next((s for s in user.stores if s.active), None)
+                if user and user.role == 'manager' else None}
+
+    @app.after_request
+    def response_cache(response):
+        if request.endpoint != 'static':
+            response.headers['Cache-Control'] = 'no-store'
+        return response
 
     @app.get('/health')
     def health():
@@ -102,6 +117,7 @@ def create_app(overrides=None):
     @app.get('/')
     def home():
         store, drafts, run, tasks = None, [], None, []
+        summary = {'orders': 0, 'pending': 0, 'receiving': 0, 'drafts': 0}
         if g.user and g.user.role in ('manager', 'admin'):
             from app.models import Store, OrderDraft
             from app.services.run_sources import latest_run
@@ -114,8 +130,32 @@ def create_app(overrides=None):
                 drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.user_id == g.user.id,
                     OrderDraft.store_id == store.id, OrderDraft.status == 'DRAFT').order_by(
                     OrderDraft.updated_at.desc()).limit(5)).scalars().all()
+                summary['drafts'] = db.session.execute(db.select(db.func.count(OrderDraft.id)).where(
+                    OrderDraft.user_id == g.user.id, OrderDraft.store_id == store.id,
+                    OrderDraft.status == 'DRAFT')).scalar_one()
+        if g.user:
+            from app.models import Order, Store, OperationalTask
+            order_query = db.select(Order.status, db.func.count(Order.id)).join(Store,
+                Store.id == Order.store_id).where(Store.active.is_(True), Order.fixture_only.is_(False))
+            if store:
+                order_query = order_query.where(Order.store_id == store.id)
+            elif g.user.role == 'manager':
+                order_query = order_query.where(db.false())
+            statuses = dict(db.session.execute(order_query.group_by(Order.status)).all())
+            summary.update(orders=sum(statuses.values()), pending=statuses.get('SUBMITTED', 0)
+                + statuses.get('CHANGE_PENDING', 0), receiving=sum(statuses.get(key, 0)
+                for key in ('SHIPPED', 'PARTIALLY_SHIPPED', 'PARTIALLY_RECEIVED')))
+            if g.user.role == 'operator':
+                from app.services.clock import aware
+                now = business_now()
+                rows = db.session.execute(db.select(OperationalTask).join(Store,
+                    Store.id == OperationalTask.store_id).where(Store.active.is_(True),
+                    OperationalTask.owner_role == 'operator', OperationalTask.completed_at.is_(None))
+                    .order_by(OperationalTask.due_at, OperationalTask.id)).scalars().all()
+                tasks = [dict(type=row.task_type, due_at=aware(row.due_at).isoformat(),
+                    overdue=aware(row.due_at) < now, store_id=row.store_id) for row in rows]
         return render_template('home.html', store=store, drafts=drafts, run=run, tasks=tasks,
-            ordering_available='runs' in app.extensions['service_providers'])
+            summary=summary, ordering_available='runs' in app.extensions['service_providers'])
 
     @app.get('/api/stores/<int:store_id>/context')
     @require_role()

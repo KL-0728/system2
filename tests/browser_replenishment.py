@@ -38,11 +38,11 @@ def test_saved_run_curves_cycle_final_and_mobile(run_server,width):
         page=browser.new_page(viewport={'width':width,'height':900})
         errors=[]; page.on('pageerror',lambda error:errors.append(str(error)))
         open_runs(page,base)
-        assert '受控測試提供者' in page.locator('#run-provider').inner_text()
+        assert '受控測試來源' in page.locator('#run-provider').inner_text()
         page.locator('#generate-run').click()
-        page.wait_for_function("document.querySelector('#run-message').textContent.includes('快照已保存')")
+        page.wait_for_function("document.querySelector('#run-message').textContent.includes('補貨建議已保存')")
         drink=page.locator('[data-sku=SKU01]')
-        assert '30件' in drink.inner_text() and 'PRE_ARRIVAL_STOCKOUT' in drink.inner_text()
+        assert '30件' in drink.inner_text() and drink.locator('[data-warning-code=PRE_ARRIVAL_STOCKOUT]').is_visible()
         missing=page.locator('[data-sku=SKU03]')
         assert '無有效建議' in missing.inner_text() and missing.locator('input').is_disabled()
         drink.locator('summary').filter(has_text='七日銷售').click()
@@ -51,20 +51,20 @@ def test_saved_run_curves_cycle_final_and_mobile(run_server,width):
         assert 'controlled-1 U 12' in drink.inner_text()
         drink.locator('input').fill('31'); page.locator('#evaluate-run').click()
         page.wait_for_function("document.querySelector('#run-message').textContent.includes('試算完成')")
-        assert 'INVALID_PACK' in drink.inner_text() and drink.locator('input').input_value()=='31'
+        assert drink.locator('[data-warning-code=INVALID_PACK]').is_visible() and drink.locator('input').input_value()=='31'
         page.locator('#run-cycle').select_option(str(case['cycles'][2].id))
         drink.locator('input').fill('1000'); page.locator('#evaluate-run').click()
-        page.wait_for_function("document.querySelector('[data-sku=SKU01]').textContent.includes('L=3')")
-        assert 'CAPACITY' in drink.inner_text() and 'LARGE_QUANTITY' in drink.inner_text()
+        page.wait_for_function("document.querySelector('[data-sku=SKU01]').textContent.includes('供貨交期 3 天')")
+        assert drink.locator('[data-warning-code=CAPACITY]').is_visible() and drink.locator('[data-warning-code=LARGE_QUANTITY]').is_visible()
         assert drink.locator('input').input_value()=='1000'
         page.locator('#load-run').click()
-        page.wait_for_function("document.querySelector('#run-message').textContent.includes('已讀取原快照')")
-        assert 'L=1' in drink.inner_text() and drink.locator('input').input_value()=='30'
+        page.wait_for_function("document.querySelector('#run-message').textContent.includes('已讀取當時建議')")
+        assert '供貨交期 1 天' in drink.inner_text() and drink.locator('input').input_value()=='30'
         page.evaluate("document.documentElement.style.fontSize='20px'")
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         page.screenshot(path=str(artifacts/f'b03-run-{width}.png'),full_page=True)
         page.reload(); page.locator('#load-run').wait_for(); page.wait_for_function("!document.querySelector('#load-run').disabled")
         page.locator('#load-run').click()
-        page.wait_for_function("document.querySelector('#run-message').textContent.includes('已讀取原快照')")
+        page.wait_for_function("document.querySelector('#run-message').textContent.includes('已讀取當時建議')")
         assert '30件' in page.locator('[data-sku=SKU01]').inner_text() and not errors
         browser.close()

@@ -1,16 +1,18 @@
 {% extends 'base.html' %}
 {% block title %}接單與履約｜統家便利店{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/fulfillment.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/fulfillment.css') }}">
 <section class="fulfillment-app" data-role="operator">
   <h1>接單與履約</h1>
-  <p>核對原訂量、承諾與待辦後操作；送出時按鈕會暫停。</p>
+  <p>回覆門市訂購、安排供貨與出貨，追蹤每一筆履約進度。</p>
+  <div class="fulfillment-filters">
   <label>門市 <select id="fulfillment-store"></select></label>
   <label>訂單 <select id="fulfillment-order"></select></label>
   <button id="fulfillment-refresh" type="button">重新整理</button>
+  </div>
   {% include 'fulfillment_pagination.html' %}
   <div id="fulfillment-error" role="alert"></div>
   <div id="fulfillment-detail"></div>
 </section>
-<script src="{{ url_for('static', filename='js/fulfillment.js') }}" defer></script>
+<script src="{{ asset_url('js/fulfillment.js') }}" defer></script>
 {% endblock %}

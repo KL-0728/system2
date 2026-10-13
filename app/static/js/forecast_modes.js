@@ -58,7 +58,7 @@ window.BForecastControls = ({api, refresh, context, work}) => {
       save.addEventListener('click',()=>work(async()=>{
         await api('/api/replenishment/manual-forecasts',{store_id:context().store_id,product_id:product.product_id,
           expected_version:context().store_version,daily_demand:get(card,'daily-demand').value,reason:get(card,'manual-reason').value});
-        await refresh('人工預測已保存，舊快照不變；請重新產生並確認本輪人工值。');
+        await refresh('人工預測已保存；請重新產生建議並確認本輪人工值。');
       })); manual.append(save);
       const checked=field(manual,'我已核對本輪人工值、理由與期限（不沿用舊勾選）','confirmed','','checkbox');
       checked.checked=false;
@@ -88,7 +88,7 @@ window.BForecastControls = ({api, refresh, context, work}) => {
         await api('/api/sales/events',{store_id:context().store_id,product_id:product.product_id,
           business_date:day.value,note:note.value,expected_version:context().store_version,
           expected_sales_version:chosen().sales_version});
-        await refresh('歷史註記已保存；未改銷量或庫存，請產生新快照核對。');
+        await refresh('歷史註記已保存；請重新產生建議核對。銷量與庫存未變。');
       })); history.append(annotate); card.append(history); container.append(card);
     }
   };

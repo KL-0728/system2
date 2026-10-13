@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}資料管理 · {{ store.name }}{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/inventory.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/inventory.css') }}">
 <div id="inventory-app" data-store-id="{{ store.id }}" data-actor-id="{{ actor_id }}">
 <div class="data-heading"><div><p class="eyebrow">{{ store.code }} · {{ store.name }}</p><h1>資料管理</h1>
 <p>先確認銷售入帳，再核對 21:00 實盤。所有數量以「件」計。</p></div>
@@ -19,8 +19,9 @@
 <div class="data-columns">
 <section id="sales-section" class="data-panel"><h2>銷售 CSV 匯入</h2>
 <p>整批驗證、整批提交。任何一列錯誤都不匯入。日常模式只扣一次；歷史模式不扣庫存。</p>
-<a href="/store/data/sample.csv?store_id={{ store.id }}">下載本店本日合成範例 CSV</a>
-<p class="data-note">範例飲料銷售2件、雨衣25件，其餘0；請核對資料後再提交。檔案上限512 KiB、2000列，UTF-8。</p>
+<details class="import-help"><summary>檔案格式與填寫範例</summary>
+<a href="/store/data/sample.csv?store_id={{ store.id }}">下載本店本日填寫範例 CSV</a>
+<p class="data-note">範例不是實際銷售資料，請改成核對後的數量再提交。檔案上限512 KiB、2000列，UTF-8。</p></details>
 <form id="sales-form">
 <label for="sales-mode">匯入模式</label><select id="sales-mode"><option value="daily_posting">日常庫存入帳</option><option value="historical">歷史預測資料（不扣庫存）</option></select>
 <label for="sales-file">CSV 檔案</label><input id="sales-file" type="file" accept=".csv,text/csv" required>
@@ -67,6 +68,6 @@
 <p data-text="book"></p><p data-text="counted"></p><p data-text="sales"></p>
 <p data-text="integrity" class="integrity"></p><ul data-text="tasks"></ul></article></template>
 </div>
-<script src="{{ url_for('static', filename='js/inventory_operations.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/inventory.js') }}" defer></script>
+<script src="{{ asset_url('js/inventory_operations.js') }}" defer></script>
+<script src="{{ asset_url('js/inventory.js') }}" defer></script>
 {% endblock %}

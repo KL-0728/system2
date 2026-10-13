@@ -24,14 +24,14 @@
   };
   const loadContext = async () => {
     context = await api('/api/replenishment/context?store_id=' + storeId);
-    $('run-window').textContent = '業務時間 ' + local(context.business_now) + '；基準 B ' + local(context.baseline_at) +
-      '；截止 ' + local(context.cutoff_at) + '（Asia/Taipei）';
+    $('run-window').textContent = '訂購基準 ' + local(context.baseline_at) + '；本輪截止 ' + local(context.cutoff_at) + '（台北時間）';
     $('run-provider').textContent = context.source_provider.test_only ?
-      '模組開發：未結來源使用受控測試提供者，尚未驗證真實履約整合。' : '未結來源：' + context.source_provider.name;
+      '模組開發：使用受控測試來源，尚未驗證真實履約整合。' :
+      context.source_provider.name === '尚未接入' ? '供貨資料目前無法取得，請聯絡管理者。' : '計算會納入門市待接單與供貨收貨紀錄。';
     const old = $('run-cycle').value;
     $('run-cycle').replaceChildren();
     for (const cycle of context.cycles) {
-      const option = node('option', local(cycle.arrival_at) + ' · L=' + cycle.lead_days + '日');
+      const option = node('option', local(cycle.arrival_at) + ' · ' + cycle.lead_days + '天後到貨');
       option.value = cycle.id; $('run-cycle').append(option);
     }
     if ([...$('run-cycle').options].some(o => o.value === old)) $('run-cycle').value = old;
@@ -41,8 +41,8 @@
       option.value = saved.id; $('saved-run').append(option);
     }
     modeControls.renderOptions(context.products);
-    if (!context.can_generate) say('目前非21:00–22:00；可讀取原快照，不能產生或重新試算。');
-    else if (!context.cycles.length) say('本輪尚無配送輪次；請先準備本機B03合成案例或核對正式輪次。', true);
+    if (!context.can_generate) say('目前不在21:00–22:00訂購時段，可查看歷次建議；請在本輪開放後重新計算。');
+    else if (!context.cycles.length) say('本輪尚無配送輪次，請聯絡管理者準備今日配送安排。', true);
   };
   const table = (headers, rows) => {
     const wrap = node('div', ''); wrap.className = 'run-scroll';
@@ -57,12 +57,12 @@
   };
   const render = (value, evaluation = false) => {
     run = value; $('run-result').hidden = false;
-    $('run-title').textContent = '計算快照 #' + run.run_id;
+    $('run-title').textContent = '補貨建議 #' + run.run_id;
     $('run-metadata').textContent = 'B ' + local(run.baseline_at) + '；產生 ' + local(run.actual_generated_at) +
       '；資料涵蓋至 ' + local(run.data_through_at) + '；風險評估 ' + local(run.risk_evaluated_at) +
       '；保護至 ' + local(run.protection_end) + '；門市版本 ' + run.store_version +
       '；模型 ' + run.model_version + '／警示 v' + run.warning_version;
-    $('run-view-kind').textContent = evaluation ? '目前顯示試算結果；保存快照未變。' : '目前顯示保存快照。';
+    $('run-view-kind').textContent = evaluation ? '目前為試算結果；原保存建議維持不變。' : '目前顯示已保存的建議。';
     $('run-items').replaceChildren();
     for (const item of run.items) {
       const card = node('article', ''); card.className = 'run-item'; card.dataset.sku = item.input_snapshot.sku;
@@ -75,11 +75,12 @@
         ['待接單／已承諾未到貨', sums.U + '／' + sums.C], ['未扣抵風險量', sums.RISK]]) {
         const cell = node('div', label); cell.className = 'run-metric'; cell.append(node('strong', String(value))); metrics.append(cell);
       }
-      card.append(metrics, node('p', 'L=' + item.lead_days + '；SS=' + item.safety_stock + '；容量=' + item.capacity +
-        '；政策版本=' + item.policy_version + '；庫存版本=' + item.inventory_version));
+      card.append(metrics, node('p', '供貨交期 ' + item.lead_days + ' 天 · 安全庫存 ' + item.safety_stock + ' 件 · 常規容量 ' + item.capacity + ' 件'));
       const warnings = node('ul', '');
       for (const warning of item.warnings) {
-        const li = node('li', warning.code + '：' + warning.message);
+        const li = node('li', warning.message);
+        li.dataset.warningCode = warning.code;
+        li.dataset.warningLevel = warning.level;
         li.className = 'run-warning ' + warning.level; warnings.append(li);
       }
       card.append(warnings);
@@ -120,11 +121,11 @@
     const result = await api('/api/replenishment/runs', {store_id: storeId, cycle_id: Number($('run-cycle').value),
       expected_version: context.store_version,...modeControls.readSelection()});
     render(result); await loadContext(); $('saved-run').value = result.run_id;
-    say('快照已保存 #' + result.run_id + '；庫存未異動。');
+    say('補貨建議已保存 #' + result.run_id + '，請進入訂購工作台核對並送出。');
   }));
   $('load-run').addEventListener('click', () => work(async () => {
     render(await api('/api/replenishment/runs/' + $('saved-run').value + '?store_id=' + storeId));
-    say('已讀取原快照；建議、來源與風險保持當時值。');
+    say('已讀取當時建議；資料與提醒維持產生時的內容。');
   }));
   $('refresh-run-context').addEventListener('click', () => work(async () => { await loadContext(); if (context.can_generate) say('門市版本已重新核對。'); }));
   $('evaluate-run').addEventListener('click', () => work(async () => {
@@ -142,7 +143,7 @@
     root.querySelectorAll('input[data-product-id]').forEach(input => {
       if (!input.dataset.unavailable) input.value = quantities[input.dataset.productId];
     });
-    say('試算完成；原快照與庫存未變，沒有建立訂單。');
+    say('試算完成；訂購前請到工作台核對最終數量。庫存與原建議未變。');
   }));
   modeControls=window.BForecastControls({api,context:()=>context,work,
     refresh:async message=>{await loadContext();modeControls.clearResultConfirmations();say(message);}});

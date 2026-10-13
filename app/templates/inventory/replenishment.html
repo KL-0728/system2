@@ -1,31 +1,30 @@
 {% extends 'base.html' %}
 {% block title %}補貨計算 · {{ store.name }}{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/replenishment.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/replenishment.css') }}">
 <div id="replenishment-app" data-store-id="{{ store.id }}">
 <div class="run-heading"><div><p>{{ store.code }} · {{ store.name }}</p><h1>補貨計算</h1>
 <p>七日需求與庫存來源，逐項核對建議及到貨風險。所有數量以件計。</p></div>
 <a href="/store/data?store_id={{ store.id }}">銷售／盤點資料</a></div>
-<p id="run-window">讀取本輪基準中…</p><p id="run-provider"></p>
+<p id="run-window" class="run-note">讀取訂購時間中…</p><p id="run-provider" class="run-note"></p>
 <p id="run-message" role="status" aria-live="polite" tabindex="-1"></p>
-<section class="run-panel"><h2>本輪計算</h2>
-<label for="run-cycle">配送輪次</label><select id="run-cycle"></select>
-<details class="forecast-choices"><summary>計算模式／人工值／歷史註記</summary><p>人工日需求與最終訂量是不同操作。有效值每輪主動確認；過期值僅作參考。庫存缺口或負帳面仍須先處理。</p><div id="forecast-options"></div></details>
-<button type="button" id="generate-run" disabled>產生並保存計算快照</button>
-<button type="button" id="refresh-run-context" disabled>重新核對版本</button>
-<p>基準固定本日21:00；產生時間另行保存。保護期間為 1＋到貨天數。建議量向上取整箱，0仍為0。</p>
-<label for="saved-run">已保存快照（最多最近30筆）</label><select id="saved-run"></select>
-<button type="button" id="load-run" disabled>讀取原快照</button>
+<section class="run-panel"><h2>準備補貨建議</h2>
+<div class="run-controls"><div><label for="run-cycle">配送輪次</label><select id="run-cycle"></select>
+<div class="run-actions"><button type="button" id="generate-run" disabled>產生補貨建議</button><button type="button" id="refresh-run-context" class="secondary" disabled>更新資料</button></div></div>
+<div><label for="saved-run">歷次補貨建議（最近30筆）</label><select id="saved-run"></select>
+<div class="run-actions"><button type="button" id="load-run" class="secondary" disabled>查看當時建議</button></div></div></div>
+<details class="forecast-choices"><summary>人工預測與特殊需求</summary><p>人工日需求與最終訂量是不同操作。有效值每輪主動確認；過期值僅作參考。庫存缺口或負帳面仍須先處理。</p><div id="forecast-options"></div></details>
+<details><summary>建議如何計算</summary><p>以本日21:00為庫存基準，使用七日平均需求及安全庫存；建議量向上取整箱。資料不足時須先處理，或指定有理由的人工預測／特殊需求。</p></details>
 </section>
-<section class="run-panel" id="run-result" hidden><h2 id="run-title"></h2><p id="run-metadata"></p>
+<section class="run-panel" id="run-result" hidden><h2 id="run-title"></h2><details><summary>資料時間與計算紀錄</summary><p id="run-metadata"></p></details>
 <a class="button-link" href="{{ url_for('ordering.ordering_page', store_id=store.id) }}">使用最新建議訂購</a>
 <p class="data-note">訂購工作台使用最新保存的建議；本頁試算修改不會自動帶入草稿，請在工作台核對最終量。</p>
-<p id="run-view-kind">目前顯示保存快照。</p>
+<p id="run-view-kind">目前顯示已保存的建議。</p>
 <div id="run-items"></div>
 <button type="button" id="evaluate-run" disabled>依上方輪次與各品項最終量試算</button>
-<p>試算不建立訂單、不異動庫存，也不覆寫原快照。正式草稿／確認／送單由訂購流程處理。</p>
+<p class="run-note">試算不會建立訂單或異動庫存。進入訂購工作台並確認送出後，統家才會收到補貨單。</p>
 </section>
 </div>
-<script defer src="{{ url_for('static', filename='js/forecast_modes.js') }}"></script>
-<script defer src="{{ url_for('static', filename='js/replenishment.js') }}"></script>
+<script defer src="{{ asset_url('js/forecast_modes.js') }}"></script>
+<script defer src="{{ asset_url('js/replenishment.js') }}"></script>
 {% endblock %}

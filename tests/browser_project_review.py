@@ -58,7 +58,7 @@ def test_home_preparation_ordering_and_shared_navigation(case, seeded, width):
             page.wait_for_function('window.waitingGenerate === true')
             assert page.locator('#forecast-options textarea').first.is_disabled()
             page.evaluate('window.releaseGenerate()')
-            page.wait_for_function("document.querySelector('#run-message').textContent.includes('快照已保存')")
+            page.wait_for_function("document.querySelector('#run-message').textContent.includes('補貨建議已保存')")
             assert page.locator('#saved-run option').count() == 1
             assert '可用現貨' in page.locator('#run-items').inner_text()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
