@@ -121,6 +121,12 @@ Remove-Item Env:APP_ENV -ErrorAction SilentlyContinue
 
 ## A03：B／C／D 各自開工
 
+### D 履約分支目前的本機入口
+
+`feat/d-module` 已加入 `/headquarters/fulfillment`（operator 接單、出貨、提案及差異）、`/store/receiving`（manager 分次收貨、回覆及損壞品處置），以及 `/api/fulfillment/` 下的訂單、待辦、出貨與收貨 API。頁面支援手機寬度，送件期間停用按鈕。正式訂單清單排除工廠訂單；只有明示 `MODULE_DEV=D` 才可於 D 開發頁看到 `fixture_only` 訂單，並有測試資料標示。
+
+此 checkout 已於本機建立 D 專用 MySQL 8.4 實例（127.0.0.1:3308）、`system2_d_demo`／`system2_d_test` 與未追蹤 `.env`；重新開機後用 `./scripts/start_d_mysql.ps1` 啟動既有實例。MySQL 管理密碼也僅存在本機 `.env`，不提交。`scripts/check_environment.py` 兩項 PASS。2026-10-12 D 模組與提供者整合測試 30 項、全套 pytest 339 項通過；另以本機 Edge 在 390px／1280px 跑接單→出貨→分次收貨，2 項通過。完整人工瀏覽器實測仍待成員執行，不代表履約與收貨已通過最終驗收。其他 checkout 仍須依「本機環境」建立自己的資料庫與設定，不要重設或覆蓋既有 DB；人工步驟與目前缺項見 [D 人工實測指引](docs/d-manual-testing.md)及[交接紀錄](docs/handoffs/D.md)。
+
 首次 clone 後先讀 docs/parallel-ready.md，核對最新發布標記a03-parallel-v2與合約v1。若工作目錄乾淨，依序執行（B 範例，C／D 換自己的分支）：
 
 ```powershell
