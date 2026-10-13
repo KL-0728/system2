@@ -24,6 +24,10 @@ button:hover:not(:disabled), .button-link:hover { filter: brightness(.96); }
 :focus-visible { outline: 3px solid #8872C1; outline-offset: 3px; }
 a { color: var(--accent); overflow-wrap: anywhere; text-underline-offset: .2em; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.login-error { color: #8A2030; background: #FFF0F1; border: 1px solid #E3A9B0; padding: .75rem; border-radius: .5rem; }
+.password-field { display: flex; align-items: stretch; gap: .5rem; }
+.password-field input { min-width: 0; flex: 1; }
+.password-toggle { flex: 0 0 auto; white-space: nowrap; background: #ECE9F3; color: var(--accent); border-color: #C9C2D7; }
 h1, h2, h3 { line-height: 1.35; }
 h1 { font-size: clamp(1.6rem, 2.8vw, 2rem); letter-spacing: -.02em; }
 h2 { font-size: 1.2rem; }

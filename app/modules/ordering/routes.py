@@ -1,11 +1,12 @@
 from flask import Blueprint, g, jsonify, render_template, request
 
-from app.contracts import dto_dict
+from app.contracts import dto_dict, quantity
 from app.extensions import db
 from app.models import Order, OrderDraft, Product, ReplenishmentRun, Store
 from app.providers import get_provider
 from app.services.access import authorize_store, require_role
 from app.services.errors import DomainError
+from app.services.inputs import query_integer
 from app.services.orders import INTRO_VERSION, ordering_service
 from app.services.version import transaction
 from app.services.run_sources import latest_run
@@ -23,6 +24,7 @@ def _payload():
 
 def _manager_store(store_id=None):
     if store_id is not None:
+        quantity(store_id, minimum=1, maximum=2_147_483_647)
         return authorize_store(g.user, store_id, roles=('manager', 'admin'))
     if g.user.role == 'manager':
         store = next((row for row in g.user.stores if row.active), None)
@@ -37,8 +39,8 @@ def _manager_store(store_id=None):
 @bp.get('/store/ordering')
 @require_role('manager', 'admin')
 def ordering_page():
-    store = _manager_store(request.args.get('store_id', type=int))
-    draft_id = request.args.get('draft_id', type=int)
+    store = _manager_store(query_integer('store_id', '門市'))
+    draft_id = query_integer('draft_id', '草稿')
     resume = ordering_service.get_draft(g.user, draft_id) if draft_id else None
     if resume and (resume['store_id'] != store.id or resume['status'] != 'DRAFT'):
         raise DomainError('NOT_FOUND', '草稿不存在或已送出', 404)
@@ -63,14 +65,14 @@ def ordering_page():
 @bp.get('/store/orders')
 @require_role('manager', 'admin')
 def orders_page():
-    store = _manager_store(request.args.get('store_id', type=int))
+    store = _manager_store(query_integer('store_id', '門市'))
     return render_template('store/orders.html', store=store)
 
 
 @bp.get('/store/orders/<int:order_id>')
 @require_role('manager', 'admin')
 def order_page(order_id):
-    store = _manager_store(request.args.get('store_id', type=int))
+    store = _manager_store(query_integer('store_id', '門市'))
     order = db.session.get(Order, order_id)
     if not order or order.store_id != store.id or order.fixture_only:
         raise DomainError('NOT_FOUND', '訂單不存在', 404)
@@ -96,7 +98,7 @@ def acknowledge_intro():
 @bp.get('/api/stores/current/dashboard')
 @require_role('manager', 'admin')
 def dashboard():
-    store = _manager_store(request.args.get('store_id', type=int))
+    store = _manager_store(query_integer('store_id', '門市'))
     run = latest_run(store.id)
     drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.store_id == store.id,
         OrderDraft.user_id == g.user.id, OrderDraft.status == 'DRAFT').order_by(
@@ -160,15 +162,15 @@ def submit(draft_id):
 @bp.get('/api/submissions/<key>')
 @require_role('manager', 'admin')
 def submission(key):
-    store = _manager_store(request.args.get('store_id', type=int))
+    store = _manager_store(query_integer('store_id', '門市'))
     return jsonify(ordering_service.submission_result(g.user, store.id, key))
 
 
 @bp.get('/api/orders')
 @require_role('manager', 'admin')
 def list_orders():
-    store = _manager_store(request.args.get('store_id', type=int))
-    page = max(1, request.args.get('page', 1, type=int))
+    store = _manager_store(query_integer('store_id', '門市'))
+    page = query_integer('page', '頁碼', default=1, maximum=1_000_000)
     page_size = 20
     total = db.session.execute(db.select(db.func.count(Order.id)).where(
         Order.store_id == store.id, Order.fixture_only.is_(False))).scalar_one()
@@ -181,7 +183,7 @@ def list_orders():
 
 
 def _order_detail(order_id, include_fulfillment=True):
-    store = _manager_store(request.args.get('store_id', type=int))
+    store = _manager_store(query_integer('store_id', '門市'))
     order = db.session.get(Order, order_id)
     if not order or order.store_id != store.id or order.fixture_only:
         raise DomainError('NOT_FOUND', '訂單不存在', 404)

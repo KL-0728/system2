@@ -165,6 +165,8 @@ class OrderingService:
         return list(db.session.execute(statement).scalars())
 
     def create_draft(self, actor, *, store_id, run_id, cycle_id, final_quantities=None):
+        for identity in (store_id, run_id, cycle_id):
+            quantity(identity, minimum=1, maximum=2_147_483_647)
         self._require_intro(actor)
         from app.services.access import authorize_store
         authorize_store(actor, store_id, roles=('manager', 'admin'))

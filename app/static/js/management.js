@@ -5,7 +5,7 @@
   const policyKeys = ['lead_days','safety_stock','capacity','absolute_large_qty','deviation_floor','deviation_multiplier','confirmation_minutes','deduction_minutes','supply_response_minutes','receipt_minutes','variance_hours','contact_minutes','manual_valid_days'];
   const keys = {products:['sku','name','base_unit','pack_size','active'],stores:['code','name','active'],users:['username','role','password','store_ids','active'],policies:['store_id','product_id',...policyKeys,'active']};
   const defaults = {base_unit:'件',pack_size:1,active:true,role:'manager',lead_days:1,safety_stock:10,capacity:100,absolute_large_qty:100,deviation_floor:100,deviation_multiplier:3,confirmation_minutes:5,deduction_minutes:60,supply_response_minutes:60,receipt_minutes:60,variance_hours:24,contact_minutes:60,manual_valid_days:7};
-  let catalog, kind='products', editing=null, auditPage=1;
+  let catalog, kind='products', editing=null, auditPage=1, saving=false;
   const status=document.querySelector('#admin-status'), form=document.querySelector('#admin-form');
   async function api(path,method='GET',body) {
     const headers={'Content-Type':'application/json'};
@@ -35,7 +35,14 @@
       if(input.type==='password'){input.value='';input.autocomplete='new-password';input.minLength=8;input.maxLength=128;}
       if(row&&['sku','code','username','store_id','product_id'].includes(key)) input.disabled=true;
       if(key!=='password'&&key!=='active'&&key!=='store_ids')input.required=true;
-      label.append(input);fields.append(label);
+      if(key==='password') {
+        input.id='admin-password';
+        const group=document.createElement('div');group.className='password-field';
+        const toggle=document.createElement('button');toggle.type='button';toggle.className='password-toggle';
+        toggle.dataset.passwordToggle=input.id;toggle.setAttribute('aria-controls',input.id);toggle.setAttribute('aria-pressed','false');toggle.textContent='顯示密碼';
+        group.append(input,toggle);label.append(group);
+      } else label.append(input);
+      fields.append(label);
     }
   }
   function render() {
@@ -46,7 +53,7 @@
       const button=document.createElement('button');button.type='button';button.className='admin-row';
       const store=catalog.stores.find(s=>s.id===row.store_id), product=catalog.products.find(p=>p.id===row.product_id);
       button.textContent=kind==='policies'?`${store?.code} · ${product?.name} · 政策 v${row.version}`:`${row.sku||row.code||row.username} · ${row.name||({manager:'店長',operator:'接單人員',admin:'管理者'}[row.role])}${row.active?'':'（停用）'}`;
-      button.addEventListener('click',()=>edit(row));list.append(button);
+      button.addEventListener('click',()=>{if(!saving)edit(row);});list.append(button);
     }
     edit();
   }
@@ -59,13 +66,16 @@
       if(Array.from(select.options).some(o=>o.value===previous))select.value=previous;
     }
   }
-  document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{kind=b.dataset.kind;render();}));
-  document.querySelector('#new-record').addEventListener('click',()=>edit());
+  document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{if(saving)return;kind=b.dataset.kind;render();}));
+  document.querySelector('#new-record').addEventListener('click',()=>{if(!saving)edit();});
   form.addEventListener('submit',async event=>{
-    event.preventDefault();const button=form.querySelector('button[type=submit]');button.disabled=true;
+    event.preventDefault();if(saving)return;
     const data={};for(const key of keys[kind]) {const el=form.elements[key];data[key]=key==='active'?el.checked:key==='store_ids'?Array.from(el.selectedOptions,o=>Number(o.value)):el.type==='number'||['store_id','product_id'].includes(key)?Number(el.value):el.value;}
     if(editing)data.revision=editing.revision;
-    try {await api(`/api/admin/${kind}${editing?'/'+editing.id:''}`,editing?'PATCH':'POST',data);await refresh();status.textContent='設定已儲存；請重新產生補貨建議。';}catch(e){status.textContent=e.message;}finally{button.disabled=false;}
+    const controls=Array.from(document.querySelectorAll('#admin-form input, #admin-form select, #admin-form button, [data-kind], #new-record, #admin-list button'));
+    const previousDisabled=controls.map(el=>el.disabled);
+    saving=true;controls.forEach(el=>el.disabled=true);
+    try {await api(`/api/admin/${kind}${editing?'/'+editing.id:''}`,editing?'PATCH':'POST',data);await refresh();status.textContent='設定已儲存；請重新產生補貨建議。';}catch(e){status.textContent=e.message;}finally{saving=false;controls.forEach((el,index)=>el.disabled=previousDisabled[index]);}
   });
   const clock=document.querySelector('#clock-form');
   const cycles=document.querySelector('#cycles-form');

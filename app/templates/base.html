@@ -8,4 +8,5 @@
 {% if business_time %}<aside role="status">示範時間：{{ business_time.strftime('%Y-%m-%d %H:%M:%S %Z') }} · 合成資料／示範帳號，請勿共用正式帳號</aside>{% endif %}
 {% if module_dev %}<aside class="warning">模組開發模式 {{ module_dev }} · 非真實跨模組整合。實際服務與資料來源見模組檢查頁。</aside>{% endif %}
 <main>{% if store is defined and store %}{% include 'store/_nav.html' %}{% endif %}{% block content %}{% endblock %}</main>
-<script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script></body></html>
+<script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/password-visibility.js') }}" defer></script></body></html>

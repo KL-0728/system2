@@ -6,6 +6,7 @@ from app.models import DeliveryCycle, ReplenishmentRun
 from app.services.access import require_role
 from app.services.clock import aware, round_window
 from app.services.errors import DomainError
+from app.services.inputs import positive_integer, query_integer
 from app.services.forecasting import MODEL_VERSION
 from app.services.inventory import _business_now
 from app.services.replenishment import ReplenishmentService, authorize
@@ -24,7 +25,7 @@ def register_replenishment(bp):
                 raise DomainError('INVALID_INPUT', '請指定門市id', 400)
             value = store.id
         if isinstance(value, str) and value.isascii() and value.isdecimal():
-            value = int(value)
+            value = positive_integer(value, '門市')
         quantity(value, minimum=1, maximum=2_147_483_647)
         return value
 
@@ -36,11 +37,12 @@ def register_replenishment(bp):
 
     def id_map(value, name):
         if value is None: return {}
-        if not isinstance(value,dict) or any(not k.isascii() or not k.isdecimal() for k in value):
+        if not isinstance(value,dict):
             raise DomainError('INVALID_INPUT',f'{name}須以商品id對應值',400)
-        if len({int(k) for k in value})!=len(value):
+        parsed = {positive_integer(k, '商品'): v for k, v in value.items()}
+        if len(parsed)!=len(value):
             raise DomainError('INVALID_INPUT','商品id不得重複',400)
-        return {int(k):v for k,v in value.items()}
+        return parsed
 
     @bp.post('/api/replenishment/manual-forecasts')
     @require_role('manager', 'admin')
@@ -66,14 +68,14 @@ def register_replenishment(bp):
     @bp.get('/store/replenishment')
     @require_role('manager', 'admin')
     def replenishment_page():
-        store = authorize(db.session, store_id(request.args.get('store_id')), g.user.id)
+        store = authorize(db.session, store_id(query_integer('store_id', '門市')), g.user.id)
         return render_template('inventory/replenishment.html', store=store)
 
     @bp.get('/api/replenishment/context')
     @require_role('manager', 'admin')
     def replenishment_context():
         with transaction():
-            store = authorize(db.session, store_id(request.args.get('store_id')), g.user.id, lock=True)
+            store = authorize(db.session, store_id(query_integer('store_id', '門市')), g.user.id, lock=True)
             now = _business_now(db.session)
             b, cutoff = round_window(now)
             cycles = db.session.execute(db.select(DeliveryCycle).where(DeliveryCycle.store_id == store.id,
@@ -111,7 +113,7 @@ def register_replenishment(bp):
     @require_role('manager', 'admin')
     def read_run(run_id):
         with transaction():
-            result = service.get_run(run_id=run_id, store_id=store_id(request.args.get('store_id')),
+            result = service.get_run(run_id=run_id, store_id=store_id(query_integer('store_id', '門市')),
                                      actor_id=g.user.id, session=db.session)
         return jsonify(dto_dict(result))
 
@@ -120,12 +122,11 @@ def register_replenishment(bp):
     def evaluate_run(run_id):
         data = payload()
         values = data.get('final_quantities')
-        if not isinstance(values, dict) or any(not k.isascii() or not k.isdecimal() for k in values):
+        if not isinstance(values, dict):
             raise DomainError('INVALID_INPUT', '請以商品id對應整數件數', 400)
-        if len({int(k) for k in values}) != len(values):
-            raise DomainError('INVALID_INPUT', '商品id不得重複', 400)
+        values = id_map(values, '最終訂量')
         with transaction():
             result = service.evaluate(run_id=run_id, store_id=store_id(data.get('store_id')), actor_id=g.user.id,
-                cycle_id=data.get('cycle_id'), final_quantities={int(k): v for k, v in values.items()},
+                cycle_id=data.get('cycle_id'), final_quantities=values,
                 manual_confirmations=data.get('manual_confirmations',[]), evaluated_at=_business_now(db.session), session=db.session)
         return jsonify(dto_dict(result))

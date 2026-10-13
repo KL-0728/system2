@@ -2,6 +2,7 @@
 import platform
 from datetime import timedelta
 from time import perf_counter
+from sqlalchemy import event
 from app.extensions import db
 from app.models import Product, User, StoreProduct, PolicyVersion, Inventory, SalesDaily, SalesImportBatch, DeliveryCycle
 from app.seed import POLICY
@@ -9,7 +10,7 @@ from app.services.clock import business_now, utc_naive
 from app.services.replenishment import ReplenishmentService
 
 
-def test_generate_1000_real_products(seeded):
+def test_generate_1000_real_products(seeded, client):
     actor=db.session.execute(db.select(User).where(User.username=='manager1')).scalar_one()
     store=actor.stores[0]
     baseline=business_now()
@@ -43,3 +44,22 @@ def test_generate_1000_real_products(seeded):
     assert len(run.items)==1000
     assert all(item.suggested_qty==30 for item in run.items)
     assert elapsed < 5, f'1000-product generation {elapsed:.3f}s exceeds target'
+    from test_management import login
+    assert login(client).status_code == 200
+    statements = []
+    engine = db.engine
+    def count_query(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith('SELECT'):
+            statements.append(statement)
+    event.listen(engine, 'before_cursor_execute', count_query)
+    try:
+        start = perf_counter()
+        response = client.get('/api/inventory/status')
+        status_elapsed = perf_counter() - start
+    finally:
+        event.remove(engine, 'before_cursor_execute', count_query)
+    assert response.status_code == 200, response.json
+    assert len(response.json['items']) == 1000
+    assert all(item['usable'] and item['h'] == 20 for item in response.json['items'])
+    assert len(statements) <= 14, len(statements)
+    print(f'1000-product inventory status={status_elapsed:.3f}s / SELECTs={len(statements)}')

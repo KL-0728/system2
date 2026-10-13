@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}操作未完成 · 統家便利店{% endblock %}
+{% block content %}
+<h1>操作未完成</h1>
+<p role="alert">{{ message }}</p>
+<p><a class="button-link" href="/">回首頁</a> <a href="{{ url_for('auth.login_page') }}">重新登入</a></p>
+{% if request_id %}<p>需要協助時，請提供請求編號：{{ request_id }}</p>{% endif %}
+{% endblock %}

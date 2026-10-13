@@ -5,6 +5,7 @@ from app.models import AuditEvent
 from app.services.access import require_role
 from app.services.clock import business_now, set_clock
 from app.services.errors import DomainError
+from app.services.inputs import query_integer
 from app.services.management import MODELS, POLICY_FIELDS, save, serialize, prepare_cycles
 from app.services.version import transaction
 from sqlalchemy.exc import IntegrityError
@@ -51,16 +52,12 @@ def update(kind, row_id=None):
 @bp.get('/api/admin/audit')
 @require_role('admin')
 def audit():
-    page = request.args.get('page', type=int) if 'page' in request.args else 1
-    if page is None or not 1 <= page <= 1000000:
-        raise DomainError('INVALID_INPUT', '頁碼須為正整數', 400)
+    page = query_integer('page', '頁碼', default=1, maximum=1_000_000)
     query = db.select(AuditEvent)
     if request.args.get('action'):
         query = query.where(AuditEvent.action == request.args['action'])
     if request.args.get('store_id'):
-        store_id = request.args.get('store_id', type=int)
-        if store_id is None:
-            raise DomainError('INVALID_INPUT', '門市須為整數', 400)
+        store_id = query_integer('store_id', '門市')
         query = query.where(AuditEvent.store_id == store_id)
     rows = db.session.execute(query.order_by(AuditEvent.id.desc()).offset((page-1)*50).limit(51)).scalars().all()
     return jsonify(page=page, has_next=len(rows)>50, events=[dict(id=r.id, actor_id=r.actor_id,

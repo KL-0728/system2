@@ -12,6 +12,7 @@ from app.models import (Inventory, InventoryCount, InventoryCountRevision, Inven
 from app.services.access import authorize_store, require_role
 from app.services.clock import aware, business_now, round_window, TAIPEI
 from app.services.errors import DomainError
+from app.services.inputs import query_integer
 from app.services.inventory import InventoryService
 from app.services.sales import SalesService, COLUMNS
 from app.services.version import transaction
@@ -39,12 +40,7 @@ def _store(store_id=None):
 
 
 def _query_store():
-    raw = request.args.get('store_id')
-    if raw is None:
-        return _store()
-    if not raw.isascii() or not raw.isdecimal():
-        raise DomainError('INVALID_INPUT', '門市識別須為整數', 400)
-    return _store(int(raw))
+    return _store(query_integer('store_id', '門市'))
 
 
 def _time(value):
@@ -70,25 +66,28 @@ def status():
     store = _query_store()
     with transaction():
         b, cutoff = round_window(business_now())
-        products = db.session.execute(db.select(Product).join(Inventory, Inventory.product_id == Product.id)
-            .where(Inventory.store_id == store.id).order_by(Product.id)).scalars().all()
+        rows = db.session.execute(db.select(Product, Inventory).join(Inventory, Inventory.product_id == Product.id)
+            .where(Inventory.store_id == store.id).order_by(Product.id)).all()
+        integrities = inventory_service.get_integrities(store_id=store.id,
+            product_ids=[product.id for product, _ in rows], baseline_at=b, session=db.session)
+        counts = {count.product_id: (count, revision) for count, revision in db.session.execute(
+            db.select(InventoryCount, InventoryCountRevision).join(InventoryCountRevision,
+                (InventoryCountRevision.count_id == InventoryCount.id)
+                & (InventoryCountRevision.revision == InventoryCount.version)).where(
+                InventoryCount.store_id == store.id, InventoryCount.cutoff_at == b.replace(tzinfo=None))).all()}
+        sales_by_product = {sale.product_id: sale for sale in db.session.execute(db.select(SalesDaily).where(
+            SalesDaily.store_id == store.id, SalesDaily.business_date == b.astimezone(TAIPEI).date())).scalars()}
+        tasks_by_product = {}
+        for task in db.session.execute(db.select(InventoryReconciliation).where(
+                InventoryReconciliation.store_id == store.id, InventoryReconciliation.status == 'OPEN')
+                .order_by(InventoryReconciliation.id)).scalars():
+            tasks_by_product.setdefault(task.product_id, []).append(task)
         items = []
-        for product in products:
-            integrity = inventory_service.get_integrity(store_id=store.id, product_id=product.id,
-                baseline_at=b, session=db.session)
-            inventory = db.session.execute(db.select(Inventory).where(Inventory.store_id == store.id,
-                Inventory.product_id == product.id)).scalar_one()
-            count = db.session.execute(db.select(InventoryCount).where(InventoryCount.store_id == store.id,
-                InventoryCount.product_id == product.id, InventoryCount.cutoff_at == b.replace(tzinfo=None))).scalar_one_or_none()
-            revision = db.session.execute(db.select(InventoryCountRevision).where(
-                InventoryCountRevision.count_id == count.id, InventoryCountRevision.revision == count.version)
-                ).scalar_one() if count else None
-            sales = db.session.execute(db.select(SalesDaily).where(SalesDaily.store_id == store.id,
-                SalesDaily.product_id == product.id, SalesDaily.business_date == b.astimezone(TAIPEI).date())
-                ).scalar_one_or_none()
-            tasks = db.session.execute(db.select(InventoryReconciliation).where(
-                InventoryReconciliation.store_id == store.id, InventoryReconciliation.product_id == product.id,
-                InventoryReconciliation.status == 'OPEN')).scalars().all()
+        for product, inventory in rows:
+            integrity = integrities[product.id]
+            count, revision = counts.get(product.id, (None, None))
+            sales = sales_by_product.get(product.id)
+            tasks = tasks_by_product.get(product.id, [])
             items.append(dict(sku=product.sku, name=product.name, pack_size=product.pack_size,
                 **dto_dict(integrity), usable=integrity.usable, h=integrity.h,
                 last_physical_qty=inventory.physical_qty, last_unsellable_qty=inventory.unsellable_qty,

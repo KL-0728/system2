@@ -4,13 +4,26 @@ from app.extensions import db, limiter
 from app.models.identity import User
 from app.services.access import require_role
 from app.services.errors import DomainError
+from urllib.parse import urlsplit
 
 bp = Blueprint('auth', __name__)
 
 
+def safe_next(value):
+    if not isinstance(value, str) or not value.startswith('/') or value.startswith('//') or '\\' in value:
+        return url_for('home')
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return url_for('home')
+    if parsed.scheme or parsed.netloc or any(ord(char) < 32 for char in value):
+        return url_for('home')
+    return value
+
+
 @bp.get('/login')
 def login_page():
-    return render_template('auth/login.html')
+    return render_template('auth/login.html', next_url=safe_next(request.args.get('next')))
 
 
 @bp.get('/api/auth/csrf')
@@ -36,7 +49,7 @@ def login():
     g.pop('csrf_token', None)
     if request.is_json:
         return jsonify(user={'id': user.id, 'role': user.role}, csrf_token=generate_csrf())
-    return redirect(url_for('home'))
+    return redirect(safe_next(data.get('next')))
 
 
 @bp.post('/logout')

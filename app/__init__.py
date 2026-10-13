@@ -1,10 +1,11 @@
 from decimal import Decimal
 from uuid import uuid4
 from datetime import datetime
-from flask import Flask, g, jsonify, render_template
+from flask import Flask, g, jsonify, render_template, request, redirect, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_wtf.csrf import CSRFError
 from werkzeug.exceptions import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from app.config import settings
 from app.extensions import db, migrate, csrf, limiter
 
@@ -47,6 +48,25 @@ def create_app(overrides=None):
     @app.errorhandler(DomainError)
     def domain_error(error):
         db.session.rollback()
+        # HTML form failures stay actionable; JSON clients retain the API contract.
+        login_form = request.endpoint == 'auth.login' and not request.is_json
+        if login_form:
+            from app.routes.auth import safe_next
+            messages = {'HTTP_429': '登入嘗試過於頻繁，請稍候一分鐘再試。'}
+            try:
+                form = request.form
+            except HTTPException:
+                form = {}  # Oversized/malformed bodies must not fail again during recovery.
+            username = form.get('username', '')[:80]
+            return render_template('auth/login.html', login_error=messages.get(error.code, error.message),
+                username=username, next_url=safe_next(form.get('next'))), error.status
+        browser_page = (request.method == 'GET' and not request.path.startswith('/api/')
+            and request.accept_mimetypes.best_match(['text/html', 'application/json']) == 'text/html')
+        if browser_page and error.code == 'UNAUTHENTICATED':
+            return redirect(url_for('auth.login_page', next=request.full_path.rstrip('?')))
+        if browser_page:
+            return render_template('error.html', message=error.message,
+                request_id=getattr(g, 'request_id', '')), error.status
         return jsonify(error={'code': error.code, 'message': error.message,
             'details': error.details, 'request_id': getattr(g, 'request_id', '')}), error.status
 
@@ -65,8 +85,14 @@ def create_app(overrides=None):
 
     @app.context_processor
     def context():
-        return {'business_time': business_now().astimezone(TAIPEI) if app.config['APP_ENV'] != 'production'
-            else None, 'module_dev': app.config['MODULE_DEV'], 'current_user': getattr(g, 'user', None)}
+        business_time = None
+        if app.config['APP_ENV'] != 'production':
+            try:
+                business_time = business_now().astimezone(TAIPEI)
+            except (DomainError, SQLAlchemyError):
+                db.session.rollback()  # Recovery pages must survive clock/DB unavailability.
+        return {'business_time': business_time, 'module_dev': app.config['MODULE_DEV'],
+            'current_user': getattr(g, 'user', None)}
 
     @app.get('/health')
     def health():

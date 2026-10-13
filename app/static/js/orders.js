@@ -21,15 +21,23 @@
   const timeLabel = (value) => value ? new Date(value).toLocaleString('zh-TW', {timeZone: 'Asia/Taipei', hour12: false}) : '尚未提供';
   const reasonLabel = (value) => ({promotion: '促銷', local_demand: '在地需求', display: '陳列調整', reduce_stock: '降低庫存', skip: '本次不訂', other: '其他'}[value] || '一般補貨，未調整');
   const list = document.getElementById('orders-list');
+  let pageRequest = 0;
   async function loadPage(page = 1) {
+    const requestId = ++pageRequest;
+    const errorTarget = document.getElementById('orders-error');
+    errorTarget.hidden = true;
     try {
       const data = await load(`/api/orders?store_id=${list.dataset.storeId}&page=${page}`);
+      if (requestId !== pageRequest) return;
       list.innerHTML = data.orders.length ? data.orders.map((order) => `<article class="order-card"><a href="/store/orders/${order.id}?store_id=${list.dataset.storeId}">${escapeHtml(order.number)}</a> <span class="status-chip">${statusLabel(order.status)}</span><p>送出時間：${escapeHtml(timeLabel(order.submitted_at))}</p></article>`).join('') : '<div class="empty-state"><strong>尚無正式訂單</strong><p>從補貨工作台建立並確認送出。</p></div>';
       const pager = document.getElementById('orders-pagination');
       pager.innerHTML = `<button id="previous-page" class="secondary" ${page === 1 ? 'disabled' : ''}>上一頁</button><span>第 ${page} 頁 · 共 ${data.total} 筆</span><button id="next-page" class="secondary" ${data.has_next ? '' : 'disabled'}>下一頁</button>`;
       document.getElementById('previous-page').onclick = () => loadPage(page - 1);
       document.getElementById('next-page').onclick = () => loadPage(page + 1);
-    } catch (error) { const target = document.getElementById('orders-error'); target.textContent = error.message; target.hidden = false; }
+    } catch (error) {
+      if (requestId !== pageRequest) return;
+      errorTarget.textContent = error.message; errorTarget.hidden = false;
+    }
   }
   if (list) loadPage();
 

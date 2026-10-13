@@ -10,6 +10,7 @@ from app.models import (Order, OrderItem, Shipment, ShipmentItem, Store,
     User, Product)
 from app.services.access import authorize_store, require_role
 from app.services.errors import DomainError
+from app.services.inputs import query_integer
 from app.services.clock import aware
 from app.services.fulfillment import fulfillment_service
 from app.services.tasks import list_tasks, request_contact, resolve_contact
@@ -24,9 +25,7 @@ def _body():
 
 
 def _store_id():
-    store_id = request.args.get('store_id', type=int)
-    if 'store_id' in request.args and (store_id is None or store_id < 1):
-        raise DomainError('INVALID_INPUT', '門市須為正整數', 400)
+    store_id = query_integer('store_id', '門市')
     if store_id is None and g.user.role == 'manager':
         store_id = next((s.id for s in g.user.stores if s.active), None)
     if store_id is None:
@@ -44,9 +43,7 @@ def headquarters_page():
 @bp.get('/store/receiving')
 @require_role('manager', 'admin')
 def receiving_page():
-    store_id = request.args.get('store_id', type=int)
-    if 'store_id' in request.args and store_id is None:
-        raise DomainError('INVALID_INPUT', '門市須為整數', 400)
+    store_id = query_integer('store_id', '門市')
     if store_id is None:
         target = next((s for s in g.user.stores if s.active), None) if g.user.role == 'manager' else \
             db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id)).scalars().first()
@@ -75,9 +72,7 @@ def products():
 @require_role('manager', 'operator', 'admin')
 def orders():
     store_id = _store_id()
-    page = request.args.get('page', type=int) if 'page' in request.args else 1
-    if page is None or not 1 <= page <= 1000000:
-        raise DomainError('INVALID_INPUT', '頁碼須為正整數', 400)
+    page = query_integer('page', '頁碼', default=1, maximum=1_000_000)
     query = db.select(Order).where(Order.store_id == store_id)
     if current_app.config['MODULE_DEV'] != 'D':
         query = query.where(Order.fixture_only.is_(False))
