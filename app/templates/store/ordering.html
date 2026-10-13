@@ -155,5 +155,4 @@
 
 {% if run %}<script id="ordering-bootstrap" type="application/json">{{ {'store_id': store.id, 'actor_id': actor_id, 'run': run, 'resume_draft': resume_draft}|tojson }}</script>{% endif %}
 <script src="{{ url_for('static', filename='js/ordering.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
 {% endblock %}

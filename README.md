@@ -1,6 +1,6 @@
 # 統家便利店補貨系統
 
-產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。此版本已接入正式B庫存／計算與C訂購；D履約與完整閉環尚待真實整合。
+產品規則以 spec.md 為準，分工與發布程序以 agent.md 為準。系統已接上真實B庫存／計算、C訂購與D履約，並提供管理者設定；完整檢查範圍、修正及限制見[2026-10-13檢查報告](docs/project-review-2026-10-13.md)，啟動與人工步驟見[整合版實測](docs/a-completion-testing.md)。真人三人計時、完整逐項產品驗收及教學影片繳交仍須實際完成。
 
 **B／C來源修正、獨立正式快照示範與D接入防護**見[提供者整合與實測](docs/provider-integration.md)。舊受控草稿保留並提示重建；沒有正式快照時先準備補貨建議。`prepare-ordering-demo`只新增獨立BCDEMO，不重設既有資料。
 
@@ -34,7 +34,9 @@ $env:APP_ENV='demo'
 .\.venv\Scripts\python -m flask --app wsgi run --host 127.0.0.1 --port 5000
 ```
 
-開啟 http://127.0.0.1:5000/login，使用 manager1（DEMO1）、manager2（DEMO2）、operator（統家接單）或 admin（管理者）；密碼均取自本機 DEMO_PASSWORD，僅為合成示範帳號。示範起點為 2026-10-08 21:00 Asia/Taipei，時間暫停；所有頁面持續標示示範時間。完整管理介面留 A04。
+開啟 http://127.0.0.1:5000/login，使用 manager1（DEMO1）、manager2（DEMO2）、operator（統家接單）或 admin（管理者）；密碼均取自本機 DEMO_PASSWORD，僅為合成示範帳號。示範起點為 2026-10-08 21:00 Asia/Taipei，時間暫停；所有頁面持續標示示範時間。管理者可从「管理設定」維護商品、門市、帳號及政策。
+
+日常完整整合請清除 `MODULE_DEV`，使用真實服務。更新本版後需重新登入；管理者重設密碼會使該帳號舊登入失效，改用新密碼登入。正式模式不顯示示範登入說明，且不能啟用模組替身或調整業務時鐘。履約及收貨清單可翻頁查看超過100張的舊訂單。
 
 新版.env.example的合成示範密碼為managerps。既有資料庫沿用建立帳號時的密碼，單改.env不會同步更新；保留資料改密碼的方法見操作入口。SECRET_KEY的產生指令僅顯示新值，須先自行填入.env再啟動Flask。
 

@@ -1,4 +1,7 @@
 from werkzeug.security import generate_password_hash, check_password_hash
+import hashlib
+import hmac
+from flask import current_app
 from app.extensions import db
 
 
@@ -33,6 +36,11 @@ class User(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def session_token(self):
+        # Bind signed sessions to current credentials without exposing the hash.
+        return hmac.new(current_app.secret_key.encode(),
+            f'{self.id}:{self.password_hash}'.encode(), hashlib.sha256).hexdigest()
 
 
 class UserAcknowledgement(db.Model):

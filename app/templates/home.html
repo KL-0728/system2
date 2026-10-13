@@ -6,6 +6,11 @@
 <h1>{{ store.name if store else '協作首頁' }}</h1>
 <p>已登入：{{ current_user.username }}。先調整數量，再核對本單，最後確認送出。</p>
 {% if store %}
+<p>本輪盤點與計算基準：21:00 · 訂貨截止：{{ store.cutoff.strftime('%H:%M') }}（台北時間）</p>
+{% if tasks %}<section class="panel"><h2>待處理事項（{{ tasks|length }}）</h2>
+{% set task_names = {'respond_order':'回覆接單','receive_shipment':'核對收貨','investigate_shipment':'查明到貨','respond_change':'回覆供貨變更','resolve_variance':'處理收貨差異','contact_headquarters':'聯絡統家','resolve_extra':'處理多送品'} %}
+{% for task in tasks[:5] %}<p>{{ task_names.get(task.type, '待處理作業') }} · 期限 <time data-local-time="{{ task.due_at }}">{{ task.due_at }}</time>{% if task.overdue %} · <strong>已逾期</strong>{% endif %}</p>{% endfor %}
+<a href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">查看全部待辦</a></section>{% endif %}
 <div class="home-actions">
   <section class="panel"><h2>今天的補貨</h2>
     {% if ordering_available and run %}
@@ -23,9 +28,8 @@
   <a href="{{ url_for('ordering.ordering_page', store_id=store.id, draft_id=draft.id) }}">繼續編輯</a></p>
 {% else %}<p>目前沒有未送出的草稿。</p>{% endfor %}
 </section>
-<section class="panel compact"><p>銷售、盤點與補貨計算已開放；收貨與供貨待辦待履約模組接入後開放。</p></section>
-{% else %}<p>請依團隊操作指南開啟對應角色的模組。</p>{% endif %}
+<section class="panel compact"><h2>收貨與供貨待辦</h2><p>核對分批實收、供貨變更及待處理差異。</p><a class="button-link secondary" href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">處理收貨與待辦</a></section>
+{% else %}<p>查看門市訂單、回覆供貨條件並登記出貨。</p><a class="button-link" href="{{ url_for('fulfillment.headquarters_page') }}">前往接單履約</a>{% endif %}
 {% if module_dev %}<p><a href="/modules/{{ module_dev|lower }}/">{{ module_dev }} 模組資料檢查</a></p>{% endif %}
-{% else %}<h1>補貨協作系統</h1><p>登入後查看門市補貨與訂單。</p><a class="button-link" href="/login">登入示範環境</a>{% endif %}
-<script src="{{ url_for('static', filename='js/local-time.js') }}" defer></script>
+{% else %}<h1>補貨協作系統</h1><p>登入後查看門市補貨與訂單。</p><a class="button-link" href="/login">登入</a>{% endif %}
 {% endblock %}

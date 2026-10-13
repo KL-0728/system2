@@ -1,5 +1,11 @@
 # 共用合約 v1
 
+2026-10-13檢查補修：登入session綁定當前密碼的HMAC識別，升級後舊session及重設密碼前的登入須重新登入；不將密碼或密碼雜湊放入cookie/API。履約訂單列表新增`page`（預設1，每頁100）及回傳`page`／`has_next`，原`orders`欄位相容。明確傳入非法門市／頁碼回400，不回退本店。履約寫入必填欄位缺漏或包含身分／路徑識別等不支援欄位回422，不作業務寫入；既有版本與冪等規則保持。
+
+2026-10-13相容延伸：正式`InventoryService`新增選用`get_integrities(store_id, product_ids, baseline_at, session)`，回傳`{product_id: IntegrityDTO}`，與逐品項`get_integrity`相同語意、UTC時間及交易責任；B/C在提供者有此方法時使用批次，舊v1提供者仍走原方法。批次方法不自行commit，先鎖門市、按商品id鎖庫存，再查入帳／對帳来源。D未結读取批次化及鎖後最新讀取不改OpenOrdersDTO或既有方法簽章。
+
+履約HTTP寫入補齊spec第11.1節的`expected_version`：接單、拒絕、供貨變更／回覆、取消、出貨、收貨、補送與差異操作傳入`GET /api/fulfillment/orders/{id}`回傳的訂單`version`。鎖門市及訂單後重驗；缺少有效版本422、舊版本409附current_version，前端重新整理並核對。出貨、收貨、補送授權、損壞處置及多送登記若已有同請求成功結果，先交回原服務核對payload並重放，不因舊expected_version阻擋成功重試。內部D服務及唯讀DTO v1簽章不變；直接呼叫舊HTTP格式的客戶端須增加此欄位，並非無聲相容。
+
 本檔於 A03 發布時凍結為 v1。Python 型別與驗證在 app/contracts.py，模型欄位精確型別／nullable／FK／唯一鍵見 docs/schema.md。相容新增採新 migration；不改已發布 revision 或既有欄位意義。
 
 ## A → 全員

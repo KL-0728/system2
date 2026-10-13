@@ -8,6 +8,14 @@
   const detail = document.querySelector('#fulfillment-detail');
   const error = document.querySelector('#fulfillment-error');
   let csrf, current, products = [];
+  let orderPage = 1;
+  let loadSequence = 0;
+  const states = {SUBMITTED:'待統家接單',ACCEPTED:'已接單',REJECTED:'已拒絕',CANCELLED:'已取消',PARTIALLY_SHIPPED:'部分出貨',SHIPPED:'已出貨',PARTIALLY_RECEIVED:'部分收貨',RECEIVED:'已收貨',CLOSED_WITH_VARIANCE:'差異結案',CHANGE_PENDING:'供貨變更待確認',PENDING:'待回覆',OPEN:'待處理',CLOSED:'已結案',DISPUTED:'有爭議'};
+  const taskNames = {respond_order:'回覆接單',receive_shipment:'核對收貨',investigate_shipment:'查明到貨',respond_change:'回覆供貨變更',resolve_variance:'處理收貨差異',contact_headquarters:'聯絡統家',resolve_extra:'處理多送品'};
+  const eventNames = {ACCEPTED:'接單',REJECTED:'拒絕品項',CANCELLED:'取消品項',SHIPPED:'登記出貨',RECEIVED:'核對收貨',CHANGE_PROPOSED:'提出供貨變更',CHANGE_RESPONDED:'回覆供貨變更',CANCELLATION_REQUESTED:'提出取消未出貨量',REAFFIRMED:'重申承諾',REPLACEMENT_AUTHORIZED:'授權補送',VARIANCE_CLOSED:'差異結案',DAMAGED_REMOVED:'處理損壞品',EXTRA_HELD:'隔離多送品',EXTRA_RESOLVED:'處理多送品',SHIPMENT_UNKNOWN:'標記到貨待查',SHIPMENT_RECONFIRMED:'確認仍在途'};
+  const dateLabel = value => value ? new Date(value).toLocaleString('zh-TW', {timeZone:'Asia/Taipei',hour12:false}) + '（台北）' : '待回覆';
+  const taipeiISO = value => value ? new Date(new Date(value).getTime()+8*3600000).toISOString().slice(0,19)+'+08:00' : '';
+  const productLabel = id => {const p=products.find(p=>p.id===id);return p?`${p.sku} ${p.name}`:`商品 ${id}`;};
   const key = () => crypto.randomUUID();
   const node = (tag, text, className) => {
     const el = document.createElement(tag);
@@ -25,7 +33,7 @@
     const input = document.createElement('input');
     input.name = name;
     input.type = type;
-    input.value = value;
+    input.value = name === 'eta' ? taipeiISO(value) : value;
     input.required = true;
     if (type === 'number') { input.min = '0'; input.step = '1'; }
     wrapper.append(input);
@@ -60,29 +68,47 @@
     if (!response.ok) throw Error(data.error?.message || `HTTP ${response.status}`);
     return data;
   }
-  const post = (path, body) => api(`/api/fulfillment/${path}`, body);
+  const post = (path, body) => api(`/api/fulfillment/${path}`, {...body, expected_version: current.version});
   async function loadStores() {
     const data = await api('/api/fulfillment/stores');
     store.replaceChildren();
     data.stores.forEach(s => option(store, s.id, `${s.code} ${s.name}`));
+    const requested = new URLSearchParams(location.search).get('store_id');
+    if (requested && data.stores.some(s => String(s.id) === requested)) store.value = requested;
     if (store.value) await loadOrders();
   }
   async function loadOrders() {
-    const data = await api(`/api/fulfillment/orders?store_id=${store.value}`);
+    if (!store.value) return;
+    const sequence = ++loadSequence;
+    const selected = order.value;
+    current = null;
+    detail.replaceChildren(node('p', '載入中…'));
+    const data = await api(`/api/fulfillment/orders?store_id=${store.value}&page=${orderPage}`);
+    if (sequence !== loadSequence) return;
     order.replaceChildren();
-    data.orders.forEach(o => option(order, o.id, `${o.number} (${o.status})${o.fixture_only ? ' · D測試訂單' : ''}`));
+    data.orders.forEach(o => option(order, o.id, `${o.number} (${states[o.status] || o.status})${o.fixture_only ? ' · D測試訂單' : ''}`));
+    if (data.orders.some(o => String(o.id) === selected)) order.value = selected;
+    document.querySelector('#fulfillment-page').textContent = `第 ${data.page} 頁`;
+    document.querySelector('#fulfillment-previous').disabled = data.page <= 1;
+    document.querySelector('#fulfillment-next').disabled = !data.has_next;
     if (order.value) await loadOrder(); else detail.replaceChildren(node('p', '本門市目前沒有正式訂單。'));
   }
   async function loadOrder() {
     if (!order.value) return;
-    current = await api(`/api/fulfillment/orders/${order.value}`);
+    const sequence = ++loadSequence;
+    const selectedOrder = order.value;
+    current = null;
+    detail.replaceChildren(node('p', '載入中…'));
+    const loaded = await api(`/api/fulfillment/orders/${selectedOrder}`);
+    if (sequence !== loadSequence) return;
+    current = loaded;
     detail.replaceChildren();
-    detail.append(node('p', `訂單 ${current.order_id} · ${current.fixture_only ? '獨立測試資料' : '正式送單'} · 版本 ${current.version}`));
+    detail.append(node('p', `${order.selectedOptions[0]?.textContent || '訂單'} · ${current.fixture_only ? '獨立測試資料' : '正式送單'}`));
     const tasks = node('article', '');
     tasks.append(node('h2', '我的待辦'));
     const openTasks = current.tasks.filter(t => !t.completed_at);
     if (!openTasks.length) tasks.append(node('p', '目前沒有待辦。'));
-    openTasks.forEach(t => tasks.append(node('p', `${t.task_type} · ${t.source_type} ${t.source_id} · 截止 ${t.due_at}${t.overdue ? ' · 已逾期' : ''}`)));
+    openTasks.forEach(t => tasks.append(node('p', `${taskNames[t.task_type] || '待處理作業'} · 截止 ${dateLabel(t.due_at)}${t.overdue ? ' · 已逾期' : ''}`)));
     detail.append(tasks);
     if (role === 'manager') {
       const contact = node('article', '');
@@ -90,8 +116,9 @@
       form(contact, '新增聯絡待辦', f => field(f, 'reason', '聯絡原因'),
         d => post(`stores/${store.value}/contacts`, {reason: d.get('reason')}));
       const allTasks = await api(`/api/fulfillment/tasks?store_id=${store.value}`);
+      if (sequence !== loadSequence) return;
       allTasks.tasks.filter(t => t.task_type === 'contact_headquarters').forEach(t => {
-        contact.append(node('p', `原因：${t.details?.reason || ''} · 截止 ${t.due_at}${t.overdue ? ' · 已逾期' : ''}`));
+        contact.append(node('p', `原因：${t.details?.reason || ''} · 截止 ${dateLabel(t.due_at)}${t.overdue ? ' · 已逾期' : ''}`));
         form(contact, '記錄聯絡結果', f => field(f, 'result', '處理結果'),
           d => post(`contacts/${t.id}/resolve`, {result: d.get('result')}));
       });
@@ -104,7 +131,14 @@
     for (const auth of current.authorizations) renderAuthorization(auth);
     const timeline = node('article', '');
     timeline.append(node('h2', '履約時間軸'));
-    current.timeline.forEach(e => timeline.append(node('p', `${e.at}　${e.type}　${JSON.stringify(e.details)}`)));
+    current.timeline.forEach(e => {
+      const record=node('details','');record.append(node('summary',`${dateLabel(e.at)} · ${eventNames[e.type] || '履約更新'}`));
+      const names={quantity:'件數',committed_qty:'承諾件數',eta:'預計到貨',reason:'原因',checked:'核對件數',sellable:'可售件數',damaged:'損壞件數',short:'短收件數',action:'處理方式',old:'原條件',new:'新條件',status:'狀態',accept:'接受變更',kind:'出貨類型',new_conditions:'新供貨條件',conditions:'供貨條件'};
+      const readable=(key,value)=>key==='eta'?dateLabel(value):typeof value==='boolean'?(value?'是':'否'):value&&typeof value==='object'?Object.entries(value).map(([k,v])=>`${names[k]||k}：${readable(k,v)}`).join(' · '):states[value]||({discard:'報廢',return:'退回',original:'原訂出貨',replacement:'補送'}[value])||String(value??'未設定');
+      record.append(node('p',`操作者帳號編號：${e.actor_id || e.actor}`));
+      for(const [key,value] of Object.entries(e.details || {}))if(names[key])record.append(node('p',`${names[key]}：${readable(key,value)}`));
+      timeline.append(record);
+    });
     if (role === 'operator') {
       current.timeline.filter(e => e.type === 'EXTRA_HELD' &&
         !current.timeline.some(done => done.type === 'EXTRA_RESOLVED' &&
@@ -124,8 +158,8 @@
   }
   function renderItem(item) {
     const card = node('article', '');
-    card.append(node('h2', `品項 ${item.product_id} · ${item.status}`));
-    card.append(node('p', `原訂 ${item.original_qty} 件 · 承諾 ${item.committed_qty} 件 · ETA ${item.eta || '待回覆'}${item.disputed ? ' · 供貨爭議，暫停新出貨' : ''}`));
+    card.append(node('h2', `${productLabel(item.product_id)} · ${states[item.status] || item.status}`));
+    card.append(node('p', `原訂 ${item.original_qty} 件 · 承諾 ${item.committed_qty} 件 · 預計到貨 ${dateLabel(item.eta)}${item.disputed ? ' · 供貨爭議，暫停新出貨' : ''}`));
     if (role === 'operator' && item.disputed) {
       form(card, '重申原承諾', () => {}, () => post(`items/${item.item_id}/reaffirm`, {}));
     }
@@ -168,7 +202,8 @@
     card.append(node('h2', `出貨批次 ${shipment.id}`));
     for (const line of shipment.lines) {
       const remaining = line.shipped_qty - line.checked_qty;
-      card.append(node('p', `品項 ${line.item_id} · ${line.kind} · 出貨 ${line.shipped_qty} · 已核對 ${line.checked_qty} · 待核對 ${remaining}${line.eta_disputed ? ' · 到貨待查，暫不扣抵' : ''}`));
+      const item=current.items.find(i=>i.item_id===line.item_id);
+      card.append(node('p', `${productLabel(item?.product_id)} · ${line.kind==='replacement'?'授權補送':'原訂出貨'} · 出貨 ${line.shipped_qty} · 已核對 ${line.checked_qty} · 待核對 ${remaining}${line.eta_disputed ? ' · 到貨待查，暫不扣抵' : ''}`));
       if (role === 'manager' && remaining > 0) {
         form(card, '確認本批收貨', f => {
           field(f, 'checked_qty', '本次核對量', remaining, 'number');
@@ -209,8 +244,8 @@
   }
   function renderChange(change) {
     const card = node('article', '');
-    card.append(node('h2', `供貨提案 ${change.id} · ${change.status}`));
-    card.append(node('p', `新條件 ${JSON.stringify(change.new_conditions)} · 原因 ${change.reason} · 回覆期限 ${change.due_at}`));
+    card.append(node('h2', `供貨提案 ${change.id} · ${states[change.status] || change.status}`));
+    card.append(node('p', `新承諾 ${change.new_conditions.committed_qty} 件 · 到貨 ${dateLabel(change.new_conditions.eta)} · 原因 ${change.reason} · 回覆期限 ${dateLabel(change.due_at)}`));
     if (role !== change.initiator_role && change.status === 'PENDING') {
       form(card, '回覆提案', f => {
         const label = node('label', '回覆');
@@ -225,7 +260,7 @@
   }
   function renderVariance(variance) {
     const card = node('article', '');
-    card.append(node('h2', `差異 ${variance.id} · ${variance.kind} · ${variance.status}`));
+    card.append(node('h2', `差異 ${variance.id} · ${variance.kind==='damaged'?'損壞':'短收'} · ${states[variance.status] || variance.status}`));
     card.append(node('p', `差異 ${variance.quantity} 件 · 已結 ${variance.closed_qty} 件`));
     if (role === 'operator' && variance.status === 'OPEN') {
       form(card, '授權補送', f => {
@@ -267,7 +302,14 @@
     }
     detail.append(card);
   }
-  store.addEventListener('change', () => loadOrders().catch(e => error.textContent = e.message));
+  store.addEventListener('change', () => {orderPage = 1; loadOrders().catch(e => error.textContent = e.message);});
+  for (const [selector, delta] of [['#fulfillment-previous', -1], ['#fulfillment-next', 1]]) {
+    document.querySelector(selector).addEventListener('click', async () => {
+      const oldPage = orderPage;
+      orderPage += delta;
+      try { await loadOrders(); } catch (e) { orderPage = oldPage; error.textContent = e.message; }
+    });
+  }
   order.addEventListener('change', () => loadOrder().catch(e => error.textContent = e.message));
   document.querySelector('#fulfillment-refresh').addEventListener('click', () => loadOrders().catch(e => error.textContent = e.message));
   (async () => { csrf = (await api('/api/auth/csrf')).csrf_token;

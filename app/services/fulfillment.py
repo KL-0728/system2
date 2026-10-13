@@ -83,7 +83,8 @@ def _changed(session, item, order, actor_id, action, old, new):
     item.version += 1
     order.version += 1
     states = [row.status for row in session.execute(db.select(OrderItem).where(
-        OrderItem.order_id == order.id)).scalars()]
+        OrderItem.order_id == order.id).order_by(OrderItem.id)
+        .execution_options(populate_existing=True).with_for_update()).scalars()]
     if len(set(states)) == 1:
         order.status = states[0]
     elif all(s in ('RECEIVED', 'CLOSED_WITH_VARIANCE', 'REJECTED', 'CANCELLED') for s in states):
@@ -105,7 +106,8 @@ def _changed(session, item, order, actor_id, action, old, new):
 
 def _shipped(session, item_id, kind='original'):
     return sum(row.shipped_qty for row in session.execute(db.select(ShipmentItem).where(
-        ShipmentItem.order_item_id == item_id, ShipmentItem.kind == kind)).scalars())
+        ShipmentItem.order_item_id == item_id, ShipmentItem.kind == kind)
+        .execution_options(populate_existing=True).with_for_update()).scalars())
 
 
 def _summary_item(session, item, requested_eta):
@@ -216,12 +218,14 @@ class FulfillmentService:
         order = session.get(Order, order_id)
         if not order:
             raise DomainError('NOT_FOUND', '訂單不存在', 404)
+        if order.fixture_only and current_app.config['APP_ENV'] != 'test' and current_app.config['MODULE_DEV'] != 'D':
+            raise DomainError('NOT_FOUND', '此為獨立開發測試訂單', 404)
         actor = session.get(User, actor_id)
         if not actor or not actor.active or actor.role not in ('operator', 'admin'):
             raise DomainError('FORBIDDEN', '無此操作權限', 403)
         _lock_store(session, order.store_id)
         prior = session.execute(db.select(Shipment).where(Shipment.order_id == order_id,
-            Shipment.request_key == key)).scalar_one_or_none()
+            Shipment.request_key == key).execution_options(populate_existing=True).with_for_update()).scalar_one_or_none()
         if prior:
             if prior.payload_hash != payload_hash:
                 raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的出貨內容不同', 409)
@@ -252,8 +256,10 @@ class FulfillmentService:
                     raise DomainError('INVALID_STATE', '出貨超過原承諾', 409)
             else:
                 auth = session.execute(db.select(ReplacementAuthorization).where(
-                    ReplacementAuthorization.id == auth_id).with_for_update()).scalar_one_or_none()
-                variance = session.get(ReceiptVariance, auth.variance_id) if auth else None
+                    ReplacementAuthorization.id == auth_id).execution_options(
+                    populate_existing=True).with_for_update()).scalar_one_or_none()
+                variance = session.execute(db.select(ReceiptVariance).where(ReceiptVariance.id == auth.variance_id)
+                    .execution_options(populate_existing=True).with_for_update()).scalar_one_or_none() if auth else None
                 receipt_item = session.get(ReceiptItem, variance.receipt_item_id) if variance else None
                 original_line = session.get(ShipmentItem, receipt_item.shipment_item_id) if receipt_item else None
                 if not auth or not original_line or original_line.order_item_id != item.id or \
@@ -298,6 +304,8 @@ class FulfillmentService:
         order = session.get(Order, shipment.order_id) if shipment else None
         if not order:
             raise DomainError('NOT_FOUND', '出貨批次不存在', 404)
+        if order.fixture_only and current_app.config['APP_ENV'] != 'test' and current_app.config['MODULE_DEV'] != 'D':
+            raise DomainError('NOT_FOUND', '此為獨立開發測試訂單', 404)
         actor = session.get(User, actor_id)
         if not actor or not actor.active or actor.role not in ('manager', 'admin') or \
                 (actor.role == 'manager' and not any(s.id == order.store_id for s in actor.stores)):
@@ -306,7 +314,7 @@ class FulfillmentService:
         payload_hash = _hash(lines)
         previous = session.execute(db.select(Receipt).where(Receipt.store_id == order.store_id,
             Receipt.user_id == actor_id, Receipt.shipment_id == shipment_id,
-            Receipt.request_key == key)).scalar_one_or_none()
+            Receipt.request_key == key).execution_options(populate_existing=True).with_for_update()).scalar_one_or_none()
         if previous:
             if previous.payload_hash != payload_hash:
                 raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的收貨內容不同', 409)
@@ -322,7 +330,7 @@ class FulfillmentService:
             seen.add(line_id)
             shipment_item = session.execute(db.select(ShipmentItem).where(
                 ShipmentItem.id == line_id, ShipmentItem.shipment_id == shipment_id)
-                .execution_options(populate_existing=True)).scalar_one_or_none()
+                .execution_options(populate_existing=True).with_for_update()).scalar_one_or_none()
             if not shipment_item:
                 raise DomainError('NOT_FOUND', '出貨品項不存在', 404)
             item, line_order = _item(session, shipment_item.order_item_id,
@@ -361,7 +369,8 @@ class FulfillmentService:
             if sellable or damaged:
                 inventory = session.execute(db.select(Inventory).where(
                     Inventory.store_id == order.store_id,
-                    Inventory.product_id == item.product_id)).scalar_one()
+                    Inventory.product_id == item.product_id).execution_options(
+                    populate_existing=True).with_for_update()).scalar_one()
                 writer.apply_movement(mutation=InventoryMutation(order.store_id,
                     item.product_id, 'receipt', row.inventory_source_id,
                     sellable + damaged, damaged, inventory.version, actor_id,
@@ -393,14 +402,15 @@ class FulfillmentService:
                         str(variance.id), 'resolve_variance',
                         business_now() + timedelta(hours=variance_hours), item.product_id)
             all_lines = session.execute(db.select(ShipmentItem).where(
-                ShipmentItem.order_item_id == item.id)).scalars().all()
+                ShipmentItem.order_item_id == item.id).execution_options(
+                populate_existing=True).with_for_update()).scalars().all()
             pending_receipt = any(s.checked_qty < s.shipped_qty for s in all_lines)
             pending_ship = _shipped(session, item.id) < item.committed_qty
             open_variance = session.execute(db.select(ReceiptVariance.id).join(ReceiptItem,
                 ReceiptItem.id == ReceiptVariance.receipt_item_id).join(ShipmentItem,
                 ShipmentItem.id == ReceiptItem.shipment_item_id).where(
                 ShipmentItem.order_item_id == item.id,
-                ReceiptVariance.status == 'OPEN').limit(1)).first() is not None
+                ReceiptVariance.status == 'OPEN').limit(1).with_for_update()).first() is not None
             item.status = 'PARTIALLY_RECEIVED' if pending_receipt or pending_ship \
                 or open_variance else 'RECEIVED'
             _event(session, item, actor_id, 'RECEIVED', f'receipt_item:{row.id}',
@@ -646,13 +656,15 @@ class FulfillmentService:
         payload_hash = _hash({'quantity': quantity_value, 'eta': eta})
         prior = session.execute(db.select(ReplacementAuthorization).where(
             ReplacementAuthorization.variance_id == variance_id,
-            ReplacementAuthorization.request_key == key)).scalar_one_or_none()
+            ReplacementAuthorization.request_key == key).execution_options(
+            populate_existing=True).with_for_update()).scalar_one_or_none()
         if prior:
             if prior.payload_hash != payload_hash:
                 raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的補送內容不同', 409)
             return prior
         used = sum(a.authorized_qty for a in session.execute(db.select(
-            ReplacementAuthorization).where(ReplacementAuthorization.variance_id == variance_id)).scalars())
+            ReplacementAuthorization).where(ReplacementAuthorization.variance_id == variance_id)
+            .execution_options(populate_existing=True).with_for_update()).scalars())
         if variance.status != 'OPEN' or quantity_value > variance.quantity - variance.closed_qty - used:
             raise DomainError('INVALID_QUANTITY', '補送額度不足', 409)
         if eta_value <= utc_naive(business_now()):
@@ -681,9 +693,11 @@ class FulfillmentService:
             ReceiptVariance.id == variance_id).execution_options(
             populate_existing=True).with_for_update()).scalar_one()
         auths = session.execute(db.select(ReplacementAuthorization).where(
-            ReplacementAuthorization.variance_id == variance_id).with_for_update()).scalars().all()
+            ReplacementAuthorization.variance_id == variance_id).execution_options(
+            populate_existing=True).with_for_update()).scalars().all()
         in_flight = sum(a.used_qty - sum(s.checked_qty for s in session.execute(
-            db.select(ShipmentItem).where(ShipmentItem.authorization_id == a.id)).scalars())
+            db.select(ShipmentItem).where(ShipmentItem.authorization_id == a.id)
+            .execution_options(populate_existing=True).with_for_update()).scalars())
             for a in auths)
         if variance.status != 'OPEN' or in_flight:
             raise DomainError('INVALID_STATE', '補送仍在途或案件已結', 409)
@@ -696,12 +710,13 @@ class FulfillmentService:
         variance.resolution = {'reason': reason}
         variance.version += 1
         pending = session.execute(db.select(ShipmentItem).where(
-            ShipmentItem.order_item_id == item.id)).scalars().all()
+            ShipmentItem.order_item_id == item.id).execution_options(
+            populate_existing=True).with_for_update()).scalars().all()
         other_open = session.execute(db.select(ReceiptVariance.id).join(ReceiptItem,
             ReceiptItem.id == ReceiptVariance.receipt_item_id).join(ShipmentItem,
             ShipmentItem.id == ReceiptItem.shipment_item_id).where(
             ShipmentItem.order_item_id == item.id, ReceiptVariance.id != variance.id,
-            ReceiptVariance.status == 'OPEN').limit(1)).first() is not None
+            ReceiptVariance.status == 'OPEN').limit(1).with_for_update()).first() is not None
         if not other_open and all(s.checked_qty == s.shipped_qty for s in pending) and \
                 _shipped(session, item.id) >= item.committed_qty:
             item.status = 'CLOSED_WITH_VARIANCE'
@@ -729,26 +744,27 @@ class FulfillmentService:
         item, order = _item(session, line.order_item_id, actor_id, ('manager', 'admin'))
         variance = session.execute(db.select(ReceiptVariance).where(
             ReceiptVariance.id == variance_id).execution_options(
-            populate_existing=True)).scalar_one()
+            populate_existing=True).with_for_update()).scalar_one()
         if variance.kind != 'damaged':
             raise DomainError('INVALID_STATE', '只有損壞實收可報廢或退回', 409)
         source = f'damaged:{variance_id}:{key}'
         prior = session.execute(db.select(FulfillmentEvent).where(
-            FulfillmentEvent.source_key == source)).scalar_one_or_none()
+            FulfillmentEvent.source_key == source).with_for_update()).scalar_one_or_none()
         if prior:
             if prior.snapshot != {'quantity': quantity_value, 'action': action}:
                 raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的處置內容不同', 409)
             return prior
         events = session.execute(db.select(FulfillmentEvent).where(
             FulfillmentEvent.order_item_id == item.id,
-            FulfillmentEvent.event_type == 'DAMAGED_REMOVED')).scalars().all()
+            FulfillmentEvent.event_type == 'DAMAGED_REMOVED').with_for_update()).scalars().all()
         removed = sum(e.snapshot['quantity'] for e in events
             if e.source_key.startswith(f'damaged:{variance_id}:'))
         if quantity_value > variance.quantity - removed:
             raise DomainError('INVALID_QUANTITY', '處置量超過損壞實收', 409)
         inventory = session.execute(db.select(Inventory).where(
             Inventory.store_id == order.store_id,
-            Inventory.product_id == item.product_id)).scalar_one()
+            Inventory.product_id == item.product_id).execution_options(
+            populate_existing=True).with_for_update()).scalar_one()
         get_provider('inventory_writer').apply_movement(mutation=InventoryMutation(
             order.store_id, item.product_id, 'damaged_removal', source,
             -quantity_value, -quantity_value, inventory.version,
@@ -787,7 +803,7 @@ class FulfillmentService:
             'quantity': quantity_value, 'reason': reason,
             'inventory_effect': 0, 'status': 'QUARANTINED'}
         prior = session.execute(db.select(FulfillmentEvent).where(
-            FulfillmentEvent.source_key == source)).scalar_one_or_none()
+            FulfillmentEvent.source_key == source).with_for_update()).scalar_one_or_none()
         if prior:
             if prior.snapshot != payload:
                 raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的多送內容不同', 409)
@@ -816,7 +832,7 @@ class FulfillmentService:
             actor_id, ('operator', 'admin'))
         source = f'extra_resolution:{event_id}'
         if session.execute(db.select(FulfillmentEvent.id).where(
-                FulfillmentEvent.source_key == source)).first():
+                FulfillmentEvent.source_key == source).with_for_update()).first():
             raise DomainError('INVALID_STATE', '多送案件已結案', 409)
         event = FulfillmentEvent(order_item_id=item.id, actor_id=actor_id,
             source_key=source, event_type='EXTRA_RESOLVED',

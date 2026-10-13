@@ -36,6 +36,8 @@ def create_app(overrides=None):
     from app.services.errors import DomainError
     from app.services.clock import business_now, TAIPEI
     app.register_blueprint(bp)
+    from app.routes.management import bp as management_bp
+    app.register_blueprint(management_bp)
 
     @app.before_request
     def before():
@@ -73,18 +75,20 @@ def create_app(overrides=None):
 
     @app.get('/')
     def home():
-        store, drafts, run = None, [], None
+        store, drafts, run, tasks = None, [], None, []
         if g.user and g.user.role in ('manager', 'admin'):
             from app.models import Store, OrderDraft
             from app.services.run_sources import latest_run
             store = next((s for s in g.user.stores if s.active), None) if g.user.role == 'manager' else \
                 db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id).limit(1)).scalar_one_or_none()
             if store:
+                from app.services.tasks import list_tasks
+                tasks = list_tasks(db.session, store.id, g.user.role)
                 run = latest_run(store.id)
                 drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.user_id == g.user.id,
                     OrderDraft.store_id == store.id, OrderDraft.status == 'DRAFT').order_by(
                     OrderDraft.updated_at.desc()).limit(5)).scalars().all()
-        return render_template('home.html', store=store, drafts=drafts, run=run,
+        return render_template('home.html', store=store, drafts=drafts, run=run, tasks=tasks,
             ordering_available='runs' in app.extensions['service_providers'])
 
     @app.get('/api/stores/<int:store_id>/context')

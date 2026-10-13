@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}管理設定｜統家便利店{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/management.css') }}">
+<h1>管理設定</h1><p>商品與政策變更只影響新計算；歷史訂單與確認紀錄保留原值。新增門市後請設定商品政策，並由店長完成銷售與盤點。</p>
+<p id="admin-status" role="status" aria-live="polite"></p>
+<nav class="admin-tabs" aria-label="管理分類">
+{% for key,label in [('products','商品'),('stores','門市'),('users','帳號'),('policies','門市商品政策')] %}<button type="button" data-kind="{{ key }}">{{ label }}</button>{% endfor %}
+</nav>
+<section class="admin-layout"><div><h2 id="list-title">商品</h2><button id="new-record" type="button">新增</button><div id="admin-list"></div></div>
+<form id="admin-form"><h2 id="edit-title">新增商品</h2><div id="admin-fields"></div><button type="submit">儲存設定</button></form></section>
+<section class="panel"><h2>準備本輪配送</h2><form id="cycles-form"><label>門市<select name="store_id"></select></label><button type="submit">準備今日配送輪次</button></form><p>保留既有輪次；新增每日21:00到貨的1至3日輪次及政策交期。新增門市商品的庫存為尚未核對的空帳，須先完成日常銷售入帳與有效盤點，才能送單。</p></section>
+{% if not config.APP_ENV == 'production' %}<section class="panel"><h2>示範時鐘</h2><p>只能向前推進；回到起點須使用安全重設命令。暫停可供錄影，期限驗證須主動推進。</p><form id="clock-form"><label>台北業務時間<input name="time" type="datetime-local" required></label><label><input name="paused" type="checkbox" checked>暫停</label><button type="submit">設定時鐘</button></form><p>重設會清除此本機 demo 的操作資料。請在 PowerShell 執行 <code>python -m flask --app wsgi reset-demo</code>，輸入有效管理者帳密與 <code>RESET LOCAL DEMO</code>。</p></section>{% endif %}
+<section class="panel"><h2>操作紀錄與異常查詢</h2><form id="audit-filter"><label>操作代碼<input name="action" placeholder="例如 management.policies.save"></label><label>門市<select name="store_id"><option value="">全部</option></select></label><button type="submit">查詢紀錄</button></form><div id="audit-list"></div><button id="audit-next" type="button" hidden>下一頁</button></section>
+<script src="{{ url_for('static', filename='js/management.js') }}" defer></script>
+{% endblock %}

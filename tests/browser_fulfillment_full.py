@@ -54,7 +54,8 @@ def open_order(page, base, path, order_id):
     page.locator('#fulfillment-store').select_option(str(store_id))
     page.locator(f'#fulfillment-order option[value="{order_id}"]').wait_for(state='attached')
     page.locator('#fulfillment-order').select_option(str(order_id))
-    page.locator('#fulfillment-detail').get_by_text(f'訂單 {order_id} ·', exact=False).wait_for()
+    selected = page.locator('#fulfillment-order option:checked').inner_text()
+    page.wait_for_function("label => document.querySelector('#fulfillment-detail > p')?.textContent.includes(label)", arg=selected)
 
 
 def submit(page, title, fields=None, expected=200):
@@ -83,6 +84,9 @@ def detail(page, base, order_id):
 def api_post(page, path, body):
     return page.evaluate('''async ({path, body}) => {
       const csrf = (await (await fetch('/api/auth/csrf')).json()).csrf_token;
+      const orderId = document.querySelector('#fulfillment-order').value;
+      const current = await (await fetch('/api/fulfillment/orders/' + orderId)).json();
+      body.expected_version = current.version;
       const response = await fetch('/api/fulfillment/' + path, {method:'POST',
         headers:{'Content-Type':'application/json','X-CSRFToken':csrf}, body:JSON.stringify(body)});
       return {status:response.status, body:await response.json()};

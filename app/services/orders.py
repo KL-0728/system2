@@ -320,14 +320,19 @@ class OrderingService:
             PolicyVersion.store_id == draft.store_id,
             PolicyVersion.product_id.in_(run_items))).scalars().all()
         policies = {(p.product_id, p.version): p.parameters for p in policy_rows}
+        integrity_provider = get_provider('integrity')
+        integrities = integrity_provider.get_integrities(store_id=draft.store_id,
+            product_ids=run_items, baseline_at=run.baseline_at, session=db.session) \
+            if hasattr(integrity_provider, 'get_integrities') else None
         for row in items:
             item = run_items.get(row.product_id)
             product = products.get(row.product_id)
             if item is None or product is None or item.run_item_id != row.run_item_id:
                 raise DomainError('VERSION_CONFLICT', '計算品項已改變，請重建草稿', 409,
                     {'product_id': row.product_id})
-            integrity = get_provider('integrity').get_integrity(store_id=draft.store_id,
-                product_id=row.product_id, baseline_at=run.baseline_at, session=db.session)
+            integrity = integrities[row.product_id] if integrities is not None else \
+                integrity_provider.get_integrity(store_id=draft.store_id,
+                    product_id=row.product_id, baseline_at=run.baseline_at, session=db.session)
             if integrity.store_id != draft.store_id or integrity.product_id != row.product_id:
                 raise DomainError('PROVIDER_MISMATCH', '庫存完整性結果與門市商品不一致', 409)
             warnings = list(item.warnings)

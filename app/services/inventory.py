@@ -142,6 +142,46 @@ class CountResult:
 
 
 class InventoryService:
+    def get_integrities(self, *, store_id, product_ids, baseline_at, session):
+        """Batch the current-count case; older baselines retain full ledger checks."""
+        require_utc(baseline_at)
+        if round_window(baseline_at)[0] != baseline_at:
+            raise DomainError('INVALID_TIME', '庫存基準須為21:00')
+        store = _lock_store(session, store_id)
+        ids = sorted(set(product_ids))
+        rows = session.execute(db.select(Inventory).where(Inventory.store_id == store_id,
+            Inventory.product_id.in_(ids)).order_by(Inventory.product_id)
+            .execution_options(populate_existing=True).with_for_update()).scalars().all()
+        if len(rows) != len(ids):
+            raise DomainError('NOT_FOUND', '門市商品庫存不存在', 404)
+        tasks = session.execute(db.select(InventoryReconciliation).where(
+            InventoryReconciliation.store_id == store_id, InventoryReconciliation.product_id.in_(ids),
+            InventoryReconciliation.source_type == 'sales_covered', InventoryReconciliation.status == 'OPEN')
+            .order_by(InventoryReconciliation.product_id, InventoryReconciliation.id)
+            .execution_options(populate_existing=True).with_for_update()).scalars().all()
+        covered = {}
+        for task in tasks:
+            covered.setdefault(task.product_id, []).append(task.id)
+        result = {}
+        for row in rows:
+            if aware(row.counted_at) != baseline_at:
+                result[row.product_id] = self.get_integrity(store_id=store_id, product_id=row.product_id,
+                    baseline_at=baseline_at, session=session)
+                continue
+            warnings = []
+            if covered.get(row.product_id):
+                warnings.append(WarningDTO('INVENTORY_GAP', '缺少有效盤點基準或日常銷售未連續入帳',
+                    {'dates': [], 'baseline_missing': True, 'reconciliation_ids': covered[row.product_id]}))
+            if row.reconciliation_required or row.book_physical_qty < row.book_unsellable_qty or row.book_unsellable_qty < 0:
+                warnings.append(WarningDTO('NEGATIVE_BOOK', '帳面可售量為負或非法，請先對帳',
+                    {'physical_book':row.book_physical_qty, 'unsellable_book':row.book_unsellable_qty,
+                     'reconciliation_required':row.reconciliation_required}))
+            result[row.product_id] = IntegrityDTO(store_id, row.product_id, row.version, store.calculation_version,
+                row.book_physical_qty, row.book_unsellable_qty,
+                None if covered.get(row.product_id) or row.reconciliation_required else baseline_at,
+                (), tuple(warnings))
+        return result
+
     def apply_movement(self, *, mutation, session):
         if not isinstance(mutation, InventoryMutation):
             raise DomainError('INVALID_INPUT', '須使用合約v1的InventoryMutation', 400)

@@ -14,6 +14,7 @@ bp = Blueprint('module_dev', __name__)
 @bp.get('/modules/<module>/')
 @require_role()
 def module_page(module):
+    module = module.lower()
     if module.upper() != current_app.config['MODULE_DEV']:
         raise DomainError('NOT_FOUND', '此模組開發模式未啟用', 404)
     if g.user.role == 'manager':

@@ -1,5 +1,15 @@
 # A 任務紀錄
 
+## 2026-10-13：D已合併後的整體優化與A收尾
+
+- 成員A；`chore/a-project-completion`；起始main／origin/main及HEAD `b45cccb`。fetch／pull --ff-only成功，起始工作目錄乾淨；D來源PR #6、head `dd39baf`。沒有改寫D分支。
+- 新增管理設定、政策追加版本／稽核／預覽失效、示範時鐘、未核對新商品空帳及每日配送準備；首頁／選單接上真實收貨與待辦。DTO v1、依賴及migration不變。
+- 真實B→C→D→B閉環、回滾及MySQL兩連線自測已加入；批次庫存完整性與未結查詢，修正D鎖後舊快照讀取。詳細自測結果／指令及被測版本見[a-completion-report.md](../a-completion-report.md)，不可用歷史模組替身測試冒充本次完整產品驗收。
+- 最終：空test schema重建後370 passed / 360.34s、最後版本的整合與Edge履約補驗18 passed / 72.41s、1000商品2.825s、Node2 passed。完整十檔Edge首輪50 passed／2個腳本舊標題失敗，修正後兩案已補驗通過；不把工廠D案例當真實C送單。預覽 http://127.0.0.1:5000/login，PID32592、無MODULE_DEV。履約HTTP寫入依spec須帶expected_version，前端已遷移，成功冪等重試優先。
+- 組員實際操作：先啟動既有3307、check_environment兩個PASS；APP_ENV=demo、清除MODULE_DEV後啟動Flask，依[a-completion-testing.md](../a-completion-testing.md)核對管理、正常送單、可售28／損壞2收貨、跨店404及時鐘倒退拒絕。
+- 本次仍為未提交本機成果；未推送／開PR／合併／部署。沒有更改demo、.env或錄影資料。真人三人計時、完整V逐項確認及教學影片／YouTube繳交尚未完成；腳本與PR文字已備妥。
+- 現在請成員按指南實測並由另一位成員複核A成果。驗證後指南提供「只提交本次檔案、推送本分支並開Ready PR，不合併」的可複製下一句；未自動延伸之前任務的main發布授權。
+
 ## 2026-10-11：全專案檢查與優化（排除未交付D）
 
 - 使用者要求檢查運作、排版、文件及可精簡／加速內容，並明確授權完成後直接放入main。本次沿A整合範圍在fix/a-project-review製作；fetch與pull --ff-only成功，起始HEAD／origin/main均bd906a0，工作目錄乾淨。
@@ -171,6 +181,14 @@ A03 未發布前，B／C／D 請勿開始模組製作。目前沒有產品驗收
 - 本機 .env／instance／兩套venv均未追蹤，工作資料保留。獨立MySQL3307仍在執行，A可按README啟動Flask實測；既有MySQL96未更動。先前詢問的既有DB連線不再需要。
 - 完整發布狀態／標記解析方式見parallel-ready。各成員的下一步／實際命令／人工預期結果見README與各自交接檔，V表未誤標產品通過。
 - 現在：請A依README核對登入、跨店與三模組基礎頁，將發布指引交B／C／D；三人可各自開始01→05。A04–A07不在本次範圍。
+
+## 全系統檢查與main發布（2026-10-13）
+
+本次由A明確授權整體檢查、納入起始全部未提交修改及直接推main，開發分支chore/a-project-completion、同步基準b45cccb。新增／補齊管理、真實B/C/D閉環、庫存完整性與未結查詢批次化、履約版本及鎖後最新讀取；另修正密碼重設舊登入、履約分頁與非同步舊畫面、API輸入、中文訂單事件與共用時間腳本。未改spec、依賴或已發布migration；沒有部署、重設demo或修改.env。
+
+最終後端383項通過，Node2項通過，migration無差異且單head、pip check通過。最後Edge／效能結果及實際main版本核對見[檢查報告](../project-review-2026-10-13.md)，細部人工案例見[實測指南](../a-completion-testing.md)。使用真實提供者閉環與模組替身結果分開；未代填三位真人、完整人工V或影片。
+
+現在團隊請核對main、重啟Flask及重新登入，依指南測管理舊版本409、角色403／跨店404、重設密碼舊登入401、正式送單→接單→出貨→收貨及冪等。若失敗附角色、main SHA及數字差異，不附憑證；本次發布不再需要另一段授權。
 
 ## A03 本機實測失敗修復（2026-10-08）
 

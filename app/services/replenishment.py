@@ -274,8 +274,11 @@ class ReplenishmentService:
         modes, special_needs, direct_quantities, confirmed = _selection(
             modes, special_needs, direct_quantities, manual_confirmations, ids)
         # Inventory locks in product order precede sales/source locks.
-        integrity = {pid: get_provider('integrity').get_integrity(store_id=store.id, product_id=pid,
-                        baseline_at=baseline, session=session) for pid in sorted(ids)}
+        provider = get_provider('integrity')
+        integrity = provider.get_integrities(store_id=store.id, product_ids=ids,
+            baseline_at=baseline, session=session) if hasattr(provider, 'get_integrities') else {
+            pid: provider.get_integrity(store_id=store.id, product_id=pid,
+                baseline_at=baseline, session=session) for pid in sorted(ids)}
         sources = _sources(session, store, baseline, end, now, ids)
         sales_by_product, references = forecast_inputs(session, store.id, ids, baseline, now)
         items = []
@@ -283,7 +286,7 @@ class ReplenishmentService:
         for sp, product, policy in configured:
             params = copy.deepcopy(policy.parameters)
             required = ('absolute_large_qty', 'deviation_floor', 'deviation_multiplier')
-            if (policy.store_id != store.id or policy.product_id != product.id or aware(policy.effective_at) > baseline
+            if (policy.store_id != store.id or policy.product_id != product.id or aware(policy.effective_at) > now
                     or params.get('review_days') != 1 or params.get('model_version') != MODEL_VERSION
                     or params.get('warning_version') != '1'
                     or any(type(params.get(k)) is not int or params[k] < 1 for k in required)

@@ -32,6 +32,7 @@ def login():
         raise DomainError('INVALID_CREDENTIALS', '帳號或密碼錯誤', 401)
     session.clear()
     session['user_id'] = user.id
+    session['credential_token'] = user.session_token()
     g.pop('csrf_token', None)
     if request.is_json:
         return jsonify(user={'id': user.id, 'role': user.role}, csrf_token=generate_csrf())

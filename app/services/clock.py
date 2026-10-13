@@ -42,9 +42,11 @@ def set_clock(actor, target, paused=True):
         current += server_now() - aware(row.server_anchor)
     if aware(target) < current:
         raise DomainError('CLOCK_BACKWARDS', '時鐘不得倒退；案例起點須透過安全重設', 409)
+    was_paused = row.paused
     row.business_anchor, row.server_anchor, row.paused = utc_naive(target), utc_naive(server_now()), paused
     from app.services.audit import record_event
-    record_event(actor.id, None, 'clock.set', 'clock:1', {'time': current.isoformat()}, {'time': target.isoformat()})
+    record_event(actor.id, None, 'clock.set', 'clock:1', {'time': current.isoformat(), 'paused': was_paused},
+        {'time': target.isoformat(), 'paused': paused})
 
 
 def round_window(now):

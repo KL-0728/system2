@@ -1,4 +1,5 @@
 from functools import wraps
+from hmac import compare_digest
 from flask import g, session
 from app.extensions import db
 from app.models.identity import User, Store
@@ -7,7 +8,9 @@ from app.services.errors import DomainError
 
 def load_user():
     g.user = db.session.get(User, session['user_id']) if session.get('user_id') else None
-    if g.user and not g.user.active:
+    token = session.get('credential_token')
+    if g.user and (not g.user.active or not isinstance(token, str)
+            or not compare_digest(token, g.user.session_token())):
         session.clear()
         g.user = None
 

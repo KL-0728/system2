@@ -16,8 +16,8 @@ from app.services.replenishment import ReplenishmentService
 
 
 def prepare_ordering_demo(session):
-    if current_app.config['APP_ENV'] != 'demo' or current_app.config['MODULE_DEV'] not in ('B', 'C'):
-        raise ValueError('僅限本機 demo、MODULE_DEV=B 或 C；不允許 test 或正式環境')
+    if current_app.config['APP_ENV'] != 'demo' or current_app.config['MODULE_DEV'] not in ('', 'B', 'C'):
+        raise ValueError('僅限本機 demo、整合模式或 MODULE_DEV=B／C；不允許 test 或正式環境')
     validate_database(session.get_bind().engine.url.render_as_string(hide_password=False), 'demo')
     for name in ('runs', 'integrity', 'inventory_writer'):
         get_provider(name)

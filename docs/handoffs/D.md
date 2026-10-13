@@ -1,5 +1,9 @@
 # D 模組交接
 
+## 2026-10-13：A同步合併結果
+
+D已由PR #6合併，来源head `dd39baf`、main合併 `b45cccb`；下方未開PR／403是D當時的歷史紀錄。A在`chore/a-project-completion`補上真實C送單→D出貨／收貨→B庫存、失敗回滾與MySQL兩連線證據，並修正門市鎖後讀取舊快照問題。沒有改寫D分支；補修是A本機未提交成果，請D複核。測試结果／人工步驟見[a-completion-report.md](../a-completion-report.md)及[a-completion-testing.md](../a-completion-testing.md)。
+
 ## 2026-10-11：A 更新接入防護（不代填 D 進度）
 
 main 已包含正式 B／C。MODULE_DEV=D 的測試注入只補缺少的插槽，不覆蓋正式 inventory_writer／orders。模組檢查頁逐一顯示實際服務來源；工廠訂單明示為獨立開發資料。D 的獨立案例仍可讀 fixture_only 訂單，正式 API／畫面不能使用這些訂單冒充 C 已送單。

@@ -1,4 +1,5 @@
 from flask import Blueprint
+from inspect import signature, Parameter
 bp = Blueprint('fulfillment', __name__)
 # D owns this blueprint.
 from flask import current_app, g, jsonify, render_template, request
@@ -22,6 +23,18 @@ def _body():
     return value
 
 
+def _store_id():
+    store_id = request.args.get('store_id', type=int)
+    if 'store_id' in request.args and (store_id is None or store_id < 1):
+        raise DomainError('INVALID_INPUT', '門市須為正整數', 400)
+    if store_id is None and g.user.role == 'manager':
+        store_id = next((s.id for s in g.user.stores if s.active), None)
+    if store_id is None:
+        raise DomainError('INVALID_INPUT', '請指定門市', 400)
+    authorize_store(g.user, store_id)
+    return store_id
+
+
 @bp.get('/headquarters/fulfillment')
 @require_role('operator', 'admin')
 def headquarters_page():
@@ -31,7 +44,15 @@ def headquarters_page():
 @bp.get('/store/receiving')
 @require_role('manager', 'admin')
 def receiving_page():
-    return render_template('store/receiving.html')
+    store_id = request.args.get('store_id', type=int)
+    if 'store_id' in request.args and store_id is None:
+        raise DomainError('INVALID_INPUT', '門市須為整數', 400)
+    if store_id is None:
+        target = next((s for s in g.user.stores if s.active), None) if g.user.role == 'manager' else \
+            db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id)).scalars().first()
+        store_id = target.id if target else None
+    store = authorize_store(g.user, store_id, roles=('manager', 'admin'))
+    return render_template('store/receiving.html', store=store)
 
 
 @bp.get('/api/fulfillment/stores')
@@ -53,19 +74,17 @@ def products():
 @bp.get('/api/fulfillment/orders')
 @require_role('manager', 'operator', 'admin')
 def orders():
-    store_id = request.args.get('store_id', type=int)
-    if store_id is None and g.user.role == 'manager':
-        store_id = next((s.id for s in g.user.stores if s.active), None)
-    if store_id is None:
-        raise DomainError('INVALID_INPUT', '請指定門市', 400)
-    authorize_store(g.user, store_id)
+    store_id = _store_id()
+    page = request.args.get('page', type=int) if 'page' in request.args else 1
+    if page is None or not 1 <= page <= 1000000:
+        raise DomainError('INVALID_INPUT', '頁碼須為正整數', 400)
     query = db.select(Order).where(Order.store_id == store_id)
     if current_app.config['MODULE_DEV'] != 'D':
         query = query.where(Order.fixture_only.is_(False))
-    rows = db.session.execute(query.order_by(Order.id.desc()).limit(100)).scalars().all()
+    rows = db.session.execute(query.order_by(Order.id.desc()).offset((page-1)*100).limit(101)).scalars().all()
     return jsonify(orders=[dict(id=o.id, number=o.number, status=o.status,
         submitted_at=aware(o.submitted_at).isoformat(), store_id=o.store_id,
-        fixture_only=o.fixture_only) for o in rows])
+        fixture_only=o.fixture_only) for o in rows[:100]], page=page, has_next=len(rows)>100)
 
 
 @bp.get('/api/fulfillment/orders/<int:order_id>')
@@ -119,12 +138,7 @@ def order_detail(order_id):
 @bp.get('/api/fulfillment/tasks')
 @require_role('manager', 'operator', 'admin')
 def tasks():
-    store_id = request.args.get('store_id', type=int)
-    if store_id is None and g.user.role == 'manager':
-        store_id = next((s.id for s in g.user.stores if s.active), None)
-    if store_id is None:
-        raise DomainError('INVALID_INPUT', '請指定門市', 400)
-    authorize_store(g.user, store_id)
+    store_id = _store_id()
     return jsonify(tasks=list_tasks(db.session, store_id, g.user.role))
 
 
@@ -150,7 +164,16 @@ def contact_result(task_id):
 
 def _mutate(method, **ids):
     body = _body()
+    parameters = signature(method).parameters
+    allowed = set(parameters) - {'actor_id', 'session'} - set(ids)
+    allowed.add('expected_version')
+    required = {name for name, p in parameters.items()
+        if p.default is Parameter.empty} - {'actor_id', 'session'} - set(ids)
+    if set(body) - allowed or required - set(body):
+        raise DomainError('INVALID_INPUT', '履約欄位缺漏或包含不支援的欄位', 422)
     with transaction() as session:
+        from app.services.fulfillment_requests import check_precondition
+        check_precondition(g.user, method.__name__, ids, body, session)
         result = method(actor_id=g.user.id, session=session, **ids, **body)
         session.flush()
         result_id = result.id
