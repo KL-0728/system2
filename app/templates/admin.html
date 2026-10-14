@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="{{ asset_url('css/management.css') }}">
 <h1>管理設定</h1><p>商品與政策變更只影響新計算；歷史訂單與確認紀錄保留原值。新增門市後請設定商品政策，並由店長完成銷售與盤點。</p>
 <p id="admin-status" role="status" aria-live="polite"></p>
+<button type="button" id="catalog-retry" hidden>重試載入設定</button>
 <nav class="admin-tabs" aria-label="管理分類">
 {% for key,label in [('products','商品'),('stores','門市'),('users','帳號'),('policies','門市商品政策')] %}<button type="button" data-kind="{{ key }}">{{ label }}</button>{% endfor %}
 </nav>

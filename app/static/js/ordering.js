@@ -7,6 +7,7 @@
   let pendingSubmission = null;
   let saving = false;
   let initializing = true;
+  let savedFields = null;
   let exclusionTarget = null;
   const RESTORE_NOTE = '依本輪系統建議恢復訂購數量';
 
@@ -24,7 +25,8 @@
       manual_ack: Boolean(row.querySelector('[data-field="manual_ack"]')?.checked),
     }));
     try { sessionStorage.setItem(storageKey, JSON.stringify({runId: bootstrap.run.run_id,
-      draftId: draft?.id, draftVersion: draft?.version, items, pendingSubmission})); } catch (_) { /* Server-saved drafts remain available on the homepage. */ }
+      draftId: draft?.id, draftVersion: draft?.version, items, pendingSubmission,
+      dirty: savedFields !== fieldSnapshot()})); } catch (_) { /* Server-saved drafts remain available on the homepage. */ }
   }
 
   function restoreItems(items, raw = false) {
@@ -183,16 +185,19 @@
       expected_version: draft.version,
       items: [...document.querySelectorAll('.product-row')].map(itemPayload),
     })});
+    savedFields = fieldSnapshot();
+    const tools = byId('draft-tools');
+    if (tools && String(draft.id) === tools.dataset.id) tools.dataset.version = String(draft.version);
     remember();
     byId('draft-status').textContent = `草稿 #${draft.id} 已儲存，尚未送出`;
   }
 
   async function saveAndPreview(previewRequested = true) {
-    if (pendingSubmission || saving || initializing) return;
+    if (pendingSubmission || saving || initializing) return false;
     const globalError = byId('global-error');
     globalError.hidden = true;
     document.querySelectorAll('[data-error-for="item"]').forEach((node) => { node.textContent = ''; });
-    if (!validateRows()) return;
+    if (!validateRows()) return false;
     saving = true;
     const editingFields = [...document.querySelectorAll('.product-row input,.product-row select,.product-row textarea,.product-row button')]
       .map((field) => [field, field.disabled]);
@@ -202,7 +207,7 @@
     if (byId('save-button')) byId('save-button').disabled = true;
     try {
       await saveDraft();
-      if (!previewRequested) return;
+      if (!previewRequested) return true;
       preview = await api(`/api/order-drafts/${draft.id}/preview`, {method: 'POST', body: JSON.stringify({
         expected_version: draft.version,
       })});
@@ -212,6 +217,7 @@
       byId('stage-preview').hidden = false;
       activateStage(2);
       window.scrollTo({top: 0, behavior: 'smooth'});
+      return true;
     } catch (error) {
       showError(globalError, error);
       const problems = error.details?.items || (error.details?.product_id ?
@@ -227,6 +233,7 @@
         }
       }
       first?.scrollIntoView({block: 'center', behavior: 'smooth'});
+      return false;
     } finally {
       saving = false;
       editingFields.forEach(([field, disabled]) => { field.disabled = disabled; });
@@ -460,7 +467,9 @@
     try { cached = JSON.parse(sessionStorage.getItem(storageKey)); } catch (_) { }
     draft = bootstrap.resume_draft || null;
     let newerDraft = false;
+    let latestRestored = false;
     if (draft) restoreItems(draft.items);
+    savedFields = fieldSnapshot();
     if (cached && (cached.runId === bootstrap.run.run_id || cached.pendingSubmission) &&
         (!draft || cached.draftId === draft.id)) {
       pendingSubmission = cached.pendingSubmission || null;
@@ -472,7 +481,11 @@
             showError(byId('global-error'), {message: saved.source_message});
             return;
           }
-          if (saved.status === 'DRAFT' || pendingSubmission) draft = saved;
+          if (saved.status === 'DRAFT' || pendingSubmission) {
+            draft = saved;
+            restoreItems(draft.items);
+            savedFields = fieldSnapshot();
+          }
         } catch (error) {
           if (error.status === 404 || error.status === 403) {
             sessionStorage.removeItem(storageKey);
@@ -481,9 +494,18 @@
         }
       }
       if (draft && !pendingSubmission && cached.draftVersion !== draft.version) {
-        restoreItems(draft.items);
-        newerDraft = true;
-        remember();
+        if (cached.dirty === false) {
+          restoreItems(draft.items);
+          savedFields = fieldSnapshot();
+          remember();
+          latestRestored = true;
+        } else {
+          // Legacy caches have no dirty flag; preserve them conservatively.
+          restoreItems(cached.items, true);
+          draft = {...draft, version: cached.draftVersion};
+          if (byId('draft-tools')) byId('draft-tools').dataset.version = String(cached.draftVersion);
+          newerDraft = true;
+        }
       } else if (cached.runId === bootstrap.run.run_id) {
         restoreItems(cached.items, true);
       }
@@ -497,9 +519,24 @@
       }
     }
     if (draft && !pendingSubmission) byId('draft-status').textContent = newerDraft ?
-      `已恢復草稿 #${draft.id} 最新儲存內容；原瀏覽器內容版本不同，請重新核對` :
+      `草稿 #${draft.id} 伺服器已有其他版本；本機輸入已保留，請另開視窗比對或明確放棄本機內容後重載` :
+      latestRestored ? `已恢復草稿 #${draft.id} 最新儲存內容；請重新核對` :
       `已恢復草稿 #${draft.id}；請核對後重新預覽`;
   }
+  function fieldSnapshot() {
+    return JSON.stringify([...document.querySelectorAll('.product-row')].map(row => ({
+      product_id: row.dataset.productId,
+      fields: ['final_qty','reason_code','reason','need_date','need_qty','arrangement']
+        .map(name => row.querySelector(`[data-field="${name}"]`).value),
+      manual_ack: Boolean(row.querySelector('[data-field="manual_ack"]')?.checked),
+    })));
+  }
+  window.system2DraftEditor = {
+    available: () => Boolean(bootstrap),
+    busy: () => initializing || saving || Boolean(pendingSubmission),
+    dirty: () => Boolean(bootstrap) && savedFields !== fieldSnapshot(),
+    save: () => saveAndPreview(false),
+  };
   for (const id of ['preview-button', 'save-button']) {
     if (byId(id)) byId(id).disabled = true;
   }

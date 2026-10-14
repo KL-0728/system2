@@ -21,6 +21,9 @@ def _body():
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
         raise DomainError('INVALID_INPUT', '請提供 JSON 物件', 400)
+    expected_actor = value.pop('expected_actor_id', g.user.id)
+    if type(expected_actor) is not int or expected_actor != g.user.id:
+        raise DomainError('ACTOR_CHANGED', '登入帳號已變更，原操作不可交給其他帳號', 401)
     return value
 
 

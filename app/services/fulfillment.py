@@ -302,8 +302,10 @@ class FulfillmentService:
             create_task(session, order.store_id, 'manager', 'shipment_item', str(line.id),
                 'receive_shipment', aware(eta) + timedelta(minutes=receipt_minutes), item.product_id)
             if delayed:
+                contact_minutes = policy_setting(session, order.store_id, item.product_id,
+                    'contact_minutes', 60)
                 create_task(session, order.store_id, 'operator', 'shipment_item', str(line.id),
-                    'investigate_shipment', business_now() + timedelta(minutes=60), item.product_id)
+                    'investigate_shipment', business_now() + timedelta(minutes=contact_minutes), item.product_id)
         return shipment
 
     def receive(self, *, shipment_id, actor_id, request_key, lines, session):

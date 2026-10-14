@@ -8,30 +8,69 @@
   const detail = document.querySelector('#fulfillment-detail');
   const error = document.querySelector('#fulfillment-error');
   const status = document.createElement('p');status.id='fulfillment-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');root.prepend(status);
-  let csrf, current, products = [], actorId, pendingWrite = null, writing = false;
+  let csrf, current, products = [], actorId, actorRole, pendingWrite = null, writing = false, identityChanged = false;
   let storageKey, storageBase, ownStorageKey;
   function restorePending() {
-    if(pendingWrite || !storageBase)return;
+    if((pendingWrite && pendingWrite.recoveryState!=='permission') || !storageBase)return;
     storageKey=ownStorageKey;
+    const candidates=[];
     for(const savedKey of Object.keys(localStorage).filter(k=>k===storageBase || k.startsWith(storageBase+':'))) {
       try {
         const saved=JSON.parse(localStorage.getItem(savedKey));
-        if(saved?.url?.startsWith('/api/fulfillment/') && saved.body?.request_key){storageKey=savedKey;pendingWrite=saved;break;}
+        if(saved?.url?.startsWith('/api/fulfillment/') && saved.body?.request_key && (!saved.actorId || saved.actorId===actorId))candidates.push({savedKey,saved});
       } catch(e) {error.textContent='保存的請求無法解析，請保留本機資料並聯絡維護者。';}
     }
+    const priority = saved => saved.recoveryState!=='permission' ? 0 :
+      String(saved.storeId)===store.value && String(saved.orderId)===order.value ? 1 : 2;
+    candidates.sort((a,b)=>priority(a.saved)-priority(b.saved));
+    if(candidates.length){storageKey=candidates[0].savedKey;pendingWrite=candidates[0].saved;}
   }
   const recovery = nodeRecovery();
   function nodeRecovery() { const panel=document.createElement("section"); panel.className="panel"; panel.hidden=true; root.prepend(panel); return panel; }
-  function protect(locked) { root.querySelectorAll("input,select,button").forEach(el => { if (recovery.contains(el)) return; if(locked) {if(el.dataset.wasDisabled===undefined)el.dataset.wasDisabled=String(el.disabled);el.disabled=true;} else if(el.dataset.wasDisabled!==undefined) {el.disabled=el.dataset.wasDisabled==="true";delete el.dataset.wasDisabled;} }); }
+  const samePendingOrder = () => pendingWrite && String(pendingWrite.storeId)===store.value && String(pendingWrite.orderId)===order.value;
+  const pendingBlocks = () => Boolean(pendingWrite && (pendingWrite.recoveryState!=='permission' || samePendingOrder()));
+  function protect(locked) {
+    root.querySelectorAll('input,select,button').forEach(el => {
+      if (recovery.contains(el)) {el.disabled=writing;return;}
+      const shouldLock=identityChanged || writing ||
+        (locked && pendingWrite?.recoveryState!=='permission') ||
+        (pendingWrite?.recoveryState==='permission' && samePendingOrder() && detail.contains(el));
+      if(shouldLock) {
+        if(el.dataset.wasDisabled===undefined)el.dataset.wasDisabled=String(el.disabled);
+        el.disabled=true;
+      } else if(el.dataset.wasDisabled!==undefined) {
+        el.disabled=el.dataset.wasDisabled==='true';
+        delete el.dataset.wasDisabled;
+      }
+    });
+  }
   function showRecovery() {
     restorePending();
-    recovery.replaceChildren(); recovery.hidden=!pendingWrite; if(!pendingWrite)return;
-    recovery.append(node("p", "此操作結果尚未確認，已保存原請求。重新登入後可查詢訂單或以原內容重試，不可修改後另送。"));
+    recovery.replaceChildren(); recovery.hidden=!pendingWrite || identityChanged; if(!pendingWrite || identityChanged)return;
+    const denied=pendingWrite.recoveryState==='permission', loginNeeded=pendingWrite.recoveryState==='login';
+    recovery.append(node("p", denied ? '原操作權限已變更，已保留內容與請求識別，停止自動重試。可切換門市／訂單處理其他有權限的工作；原案件須恢復權限後再查詢或重試。' : loginNeeded ? '登入已失效。原請求已保存，請重新登入原帳號後再查詢或重試。' : '此操作結果尚未確認，已保存原請求。請查詢訂單或以原內容重試，不可修改後另送。'));
+    if(loginNeeded){const login=node('a','重新登入原帳號');login.href=`/login?next=${encodeURIComponent(location.pathname+location.search)}`;recovery.append(login);}
+    if(denied){const home=node('a','返回首頁查看目前可用工作');home.href='/';recovery.append(home);}
     recovery.append(node('p',`原門市 #${pendingWrite.storeId} · 原訂單 #${pendingWrite.orderId}`));
     const view=node("pre",JSON.stringify(pendingWrite.body,null,2));recovery.append(view);
     const inspect=node("a","查詢原訂單");inspect.href=`${role=== "manager"?"/store/receiving":"/headquarters/fulfillment"}?store_id=${pendingWrite.storeId}&order_id=${pendingWrite.orderId}`;recovery.append(inspect);
-    const retry=node("button","以原內容重試");retry.type="button";recovery.append(retry);
-    retry.onclick=async()=>{retry.disabled=true;const original=pendingWrite;try {csrf=(await api("/api/auth/csrf")).csrf_token;await sendSaved();error.textContent='';status.textContent="操作已確認完成。";try{if(String(original.storeId)!==store.value || String(original.orderId)!==order.value){if(!Array.from(store.options).some(o=>o.value===String(original.storeId)))await loadStores();store.value=String(original.storeId);requestedOrder=String(original.orderId);orderPage=1;await loadOrders();}else await loadOrder();}catch(e){status.textContent="操作已完成，更新畫面失敗，請重新整理。";}}catch(e){error.textContent=e.message;}finally{retry.disabled=false;showRecovery();protect(Boolean(pendingWrite));}};
+    const retry=node("button",denied?'重新檢查權限並重試':'以原內容重試');retry.type="button";recovery.append(retry);
+    retry.onclick=async()=>{
+      if(writing)return;
+      writing=true;protect(true);retry.disabled=true;
+      const original=pendingWrite;
+      try {
+        await sendSaved();error.textContent='';status.textContent='操作已確認完成。';
+        try {
+          if(String(original.storeId)!==store.value || String(original.orderId)!==order.value) {
+            if(!Array.from(store.options).some(o=>o.value===String(original.storeId)))await loadStores();
+            store.value=String(original.storeId);requestedOrder=String(original.orderId);orderPage=1;
+            await loadOrders();
+          } else await loadOrder();
+        } catch(e) {status.textContent='操作已完成，更新畫面失敗，請重新整理。';}
+      } catch(e) {error.textContent=e.message;}
+      finally {writing=false;retry.disabled=false;showRecovery();protect(Boolean(pendingWrite));}
+    };
   }
   let orderPage = 1;
   let requestedOrder = new URLSearchParams(location.search).get('order_id');
@@ -77,7 +116,7 @@
     el.append(button);
     el.addEventListener('submit', async event => {
       event.preventDefault();
-      if (button.disabled || writing || pendingWrite) return;
+      if (button.disabled || writing || pendingBlocks() || identityChanged) return;
       writing = true; protect(true);
       error.textContent = '';
       status.textContent='';
@@ -99,14 +138,38 @@
   async function sendSaved() {
     const saved=pendingWrite;
     const savedKey=storageKey;
-    try {const result=await api(saved.url,saved.body);localStorage.removeItem(savedKey);pendingWrite=null;storageKey=ownStorageKey;return result;}
-    catch(e) {if(e.status && e.status < 500 && ![401,403].includes(e.status) && e.code && !['CSRF_FAILED','IDEMPOTENCY_CONFLICT'].includes(e.code)){localStorage.removeItem(savedKey);pendingWrite=null;storageKey=ownStorageKey;}throw e;}
+    try {
+      await verifyIdentity();
+      const allowed=await api('/api/fulfillment/stores');
+      if(!allowed.stores.some(s=>String(s.id)===String(saved.storeId))){const failure=Error('原門市權限已撤銷，原請求保留；請切換其他有權限的門市。');failure.status=403;throw failure;}
+      csrf=(await api('/api/auth/csrf')).csrf_token;
+      saved.recoveryState='unknown';
+      // Upgrade legacy records with identity metadata; business fields and key stay exact.
+      saved.body.expected_actor_id ??= actorId;
+      try{localStorage.setItem(savedKey,JSON.stringify(saved));}catch(_){}
+      const result=await api(saved.url,saved.body);localStorage.removeItem(savedKey);pendingWrite=null;storageKey=ownStorageKey;return result;
+    } catch(e) {
+      if([401,403,404].includes(e.status)) {
+        if(e.code==='ACTOR_CHANGED'){identityChanged=true;detail.replaceChildren(node('p','登入帳號已變更，請重新載入畫面。'));}
+        saved.recoveryState=e.status===401?'login':'permission';
+        // Never discard evidence on a permission failure, including a hidden cross-store 404.
+        try{localStorage.setItem(savedKey,JSON.stringify(saved));}catch(_){}
+      } else if(e.status && e.status < 500 && e.code && !['CSRF_FAILED','IDEMPOTENCY_CONFLICT'].includes(e.code)){localStorage.removeItem(savedKey);pendingWrite=null;storageKey=ownStorageKey;}
+      throw e;
+    }
+  }
+  async function verifyIdentity() {
+    const actor=await api('/api/auth/me');
+    if(actor.id!==actorId){identityChanged=true;recovery.replaceChildren();recovery.hidden=true;detail.replaceChildren(node('p','登入帳號已變更，請重新載入畫面；原帳號請求仍保留且不會交給新帳號。'));protect(true);const failure=Error('登入帳號已變更，請重新載入畫面。');failure.status=401;throw failure;}
+    if(actor.role!==actorRole){const failure=Error('角色權限已變更，請重新載入畫面。原請求仍保留。');failure.status=403;throw failure;}
   }
   async function post(path, body) {
-    const payload={...body,expected_version:current.version};
+    const payload={...body,expected_version:current.version,expected_actor_id:actorId};
     payload.request_key ||= key();
-    storageKey=ownStorageKey;
-    pendingWrite={url:`/api/fulfillment/${path}`,body:payload,storeId:store.value,orderId:order.value};
+    await verifyIdentity();
+    // Each operation gets its own storage slot; a suspended case must survive other work.
+    ownStorageKey=storageBase+':'+key();storageKey=ownStorageKey;
+    pendingWrite={url:`/api/fulfillment/${path}`,body:payload,storeId:store.value,orderId:order.value,actorId};
     try{localStorage.setItem(storageKey,JSON.stringify(pendingWrite));}catch(e){pendingWrite=null;throw Error('無法保存原請求，請允許本機儲存後重試。');}
     return sendSaved();
   }
@@ -115,15 +178,15 @@
     store.replaceChildren();
     data.stores.forEach(s => option(store, s.id, `${s.code} ${s.name}`));
     const requested = new URLSearchParams(location.search).get('store_id');
-    const targetStore = pendingWrite?.storeId || requested;
+    const targetStore = (pendingWrite?.recoveryState!=='permission' && pendingWrite?.storeId) || requested;
     if (targetStore && data.stores.some(s => String(s.id) === String(targetStore))) store.value = targetStore;
     if (store.value) await loadOrders();
   }
   async function loadOrders() {
     if (!store.value) return;
     const sequence = ++loadSequence;
-    const selected = pendingWrite?.orderId || requestedOrder || order.value;
-    const fetchExplicitTarget = Boolean(pendingWrite || requestedOrder);
+    const selected = (pendingWrite?.recoveryState!=='permission' && pendingWrite?.orderId) || requestedOrder || order.value;
+    const fetchExplicitTarget = Boolean((pendingWrite && pendingWrite.recoveryState!=='permission') || requestedOrder);
     current = null;
     detail.replaceChildren(node('p', '載入中…'));
     let data;
@@ -218,7 +281,7 @@
       });
     }
     detail.append(timeline);
-    if(writing || pendingWrite)protect(true);
+    showRecovery();protect(Boolean(pendingWrite));
     if(location.hash)document.getElementById(location.hash.slice(1))?.scrollIntoView({block:'center'});
     detail.dataset.loadedOrderId=String(current.order_id);
   }
@@ -373,7 +436,7 @@
     }
     detail.append(card);
   }
-  document.querySelector('#order-filters').addEventListener('submit',e=>{e.preventDefault();if(writing||pendingWrite)return;orderPage=1;loadOrders().catch(e=>error.textContent=e.message);});
+  document.querySelector('#order-filters').addEventListener('submit',e=>{e.preventDefault();if(writing||(pendingWrite && pendingWrite.recoveryState!=='permission'))return;orderPage=1;loadOrders().catch(e=>error.textContent=e.message);});
   store.addEventListener('change', () => {requestedOrder=null;orderPage = 1; loadOrders().catch(e => error.textContent = e.message);});
   for (const [selector, delta] of [['#fulfillment-previous', -1], ['#fulfillment-next', 1]]) {
     document.querySelector(selector).addEventListener('click', async () => {
@@ -384,11 +447,13 @@
   }
   order.addEventListener('change', () => loadOrder().catch(e => error.textContent = e.message));
   document.querySelector('#fulfillment-refresh').addEventListener('click', () => loadOrders().catch(e => error.textContent = e.message));
-  window.addEventListener('storage',event=>{if(!writing && !pendingWrite && storageBase && event.key?.startsWith(storageBase)){showRecovery();protect(Boolean(pendingWrite));}});
+  window.addEventListener('storage',event=>{if(!writing && (!pendingWrite || pendingWrite.recoveryState==='permission') && storageBase && event.key?.startsWith(storageBase)){showRecovery();protect(Boolean(pendingWrite));}});
+  window.addEventListener('focus',()=>{if(actorId)verifyIdentity().catch(e=>{error.textContent=e.message;showRecovery();protect(Boolean(pendingWrite));});});
   (async () => { csrf = (await api('/api/auth/csrf')).csrf_token;
     products = (await api('/api/fulfillment/products')).products;
-    actorId=(await api('/api/auth/me')).id;storageBase=`system2-fulfillment:${actorId}`;ownStorageKey=storageBase+':'+key();storageKey=ownStorageKey;
+    const actor=await api('/api/auth/me');actorId=actor.id;actorRole=actor.role;storageBase=`system2-fulfillment:${actorId}`;ownStorageKey=storageBase+':'+key();storageKey=ownStorageKey;
     restorePending();
-    await loadStores();showRecovery();if(pendingWrite)protect(true); })()
-    .catch(e => error.textContent = e.message);
+    await loadStores(); })()
+    .catch(e => error.textContent = e.message)
+    .finally(()=>{showRecovery();protect(Boolean(pendingWrite));});
 })();

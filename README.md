@@ -2,6 +2,8 @@
 
 本文件是唯一的首次安裝、日常啟動、升級、測試及故障排除入口。產品以 [spec.md](spec.md) 為準，四人協作依 [agent.md](agent.md)。完整操作與人工驗收見 [2026-10-14 修正報告](docs/system-hardening-2026-10-14.md)。
 
+六項複查的原因、修復、回歸結果與逐步實測見[六項複查交接](docs/six-review-fixes-2026-10-14.md)。草稿封存／重建先選擇儲存或放棄；權限失效保留原履約請求，可恢復後以原內容重試；管理刷新失敗時使用「重試載入設定」。
+
 系統使用真實 B 庫存／七日平均、C 草稿確認送單、D 接單出貨收貨。課程資料為合成資料，不宣稱企業效益；未實作總倉配貨、付款、真實 POS、外部物流、完整效期批次或大型分散式架構。真人計時及影片由組員執行。
 
 ## 首次安裝（PowerShell）
@@ -59,7 +61,7 @@ Remove-Item Env:MODULE_DEV -ErrorAction SilentlyContinue
 $env:APP_ENV='test'
 Remove-Item Env:MODULE_DEV -ErrorAction SilentlyContinue
 .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
-node --test tests/ordering_ui.test.cjs
+node --test tests/ordering_ui.test.cjs tests/recovery_ui.test.cjs
 .\.venv\Scripts\python.exe -m flask --app wsgi db check
 ```
 
@@ -67,7 +69,7 @@ node --test tests/ordering_ui.test.cjs
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-browser.txt
-.\.venv\Scripts\python.exe -m pytest -q tests/browser_a_completion.py tests/browser_system_hardening.py -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest -q tests/browser_a_completion.py tests/browser_system_hardening.py tests/browser_six_review.py -p no:cacheprovider
 .\.venv\Scripts\python.exe -m pytest -q -s tests/performance_integration.py tests/performance_open_history.py -p no:cacheprovider
 Remove-Item Env:APP_ENV
 ```

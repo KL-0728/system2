@@ -115,9 +115,9 @@ class SalesService:
         if errors:
             return data, store, now, rows, errors
         source = rows[0]['source_batch_id']
+        # Deactivation stops new ordering, not the record of actual past sales.
         products = session.execute(db.select(Product).join(StoreProduct,
-            StoreProduct.product_id == Product.id).where(StoreProduct.store_id == store.id,
-            StoreProduct.active.is_(True), Product.active.is_(True))).scalars().all()
+            StoreProduct.product_id == Product.id).where(StoreProduct.store_id == store.id)).scalars().all()
         by_sku = {product.sku: product for product in products}
         # The store lock serializes the entire batch; acquire all inventory locks in product order.
         inventories = {product_id: _inventory(session, store.id, product_id, lock=True)
@@ -140,7 +140,7 @@ class SalesService:
             try:
                 product = by_sku.get(row['sku'])
                 if not product:
-                    raise DomainError('UNKNOWN_PRODUCT', '本店無此啟用商品')
+                    raise DomainError('UNKNOWN_PRODUCT', '商品不存在或未關聯至本門市')
                 inventory = inventories[product.id]
                 day = date.fromisoformat(row['business_date'])
                 old = session.execute(db.select(SalesDaily).where(SalesDaily.store_id == store.id,

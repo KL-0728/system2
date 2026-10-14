@@ -126,6 +126,11 @@ def create_app(overrides=None):
             from app.services.run_sources import latest_run
             store = next((s for s in g.user.stores if s.active), None) if g.user.role == 'manager' else \
                 db.session.execute(db.select(Store).where(Store.active.is_(True)).order_by(Store.id).limit(1)).scalar_one_or_none()
+            requested_store = request.args.get('store_id')
+            if requested_store is not None:
+                if not requested_store.isascii() or not requested_store.isdecimal() or len(requested_store) > 10:
+                    raise DomainError('INVALID_INPUT', '門市編號格式不正確', 400)
+                store = authorize_store(g.user, int(requested_store))
             if store:
                 from app.services.tasks import list_tasks
                 tasks = list_tasks(db.session, store.id, g.user.role)

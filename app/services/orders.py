@@ -241,9 +241,11 @@ class OrderingService:
         draft = self._owned_draft(draft_id, actor)
         lock_store(draft.store_id)
         draft = self._owned_draft(draft_id, actor, lock=True)
+        if type(expected_version) is not int or draft.version != expected_version:
+            raise DomainError('VERSION_CONFLICT', '草稿已送出或更新，請重新核對', 409)
         if draft.status == 'ARCHIVED':
             return draft
-        if draft.status != 'DRAFT' or type(expected_version) is not int or draft.version != expected_version:
+        if draft.status != 'DRAFT':
             raise DomainError('VERSION_CONFLICT', '草稿已送出或更新，請重新核對', 409)
         draft.status = 'ARCHIVED'
         draft.version += 1

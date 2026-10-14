@@ -6,7 +6,7 @@
   const keys = {products:['sku','name','base_unit','pack_size','active'],stores:['code','name','active'],users:['username','role','password','store_ids','active'],policies:['store_id','product_id',...policyKeys,'active']};
   const defaults = {base_unit:'件',pack_size:1,active:true,role:'manager',lead_days:1,safety_stock:10,capacity:100,absolute_large_qty:100,deviation_floor:100,deviation_multiplier:3,confirmation_minutes:5,deduction_minutes:60,supply_response_minutes:60,receipt_minutes:60,variance_hours:24,contact_minutes:60,manual_valid_days:7};
   let catalogPage=1,catalogSequence=0,catalogLoading=false;
-  let catalog, kind='products', editing=null, auditPage=1, saving=false;
+  let catalog, kind='products', editing=null, auditPage=1, saving=false, catalogReady=false;
   const status=document.querySelector('#admin-status'), form=document.querySelector('#admin-form');
   async function api(path,method='GET',body) {
     const headers={'Content-Type':'application/json'};
@@ -18,6 +18,7 @@
   }
   function option(select,value,label) {const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}
   function edit(row=null) {
+    if (!catalogReady || catalogLoading) {status.textContent='請先重試載入設定。';return;}
     editing=row; document.querySelector('#edit-title').textContent=(row?'修改':'新增')+titles[kind];
     const fields=document.querySelector('#admin-fields');fields.replaceChildren();
     for(const key of keys[kind]) {
@@ -66,34 +67,48 @@
   }
   async function refresh() {
     catalogLoading=true;
-    document.querySelector('#admin-list').replaceChildren();
-    document.querySelector('#admin-fields').replaceChildren();
-    editing=null;
-    const seq=++catalogSequence;const result=await api(`/api/admin/catalog?kind=${kind}&page=${catalogPage}&search=${encodeURIComponent(document.querySelector('#catalog-search input').value)}`);if(seq!==catalogSequence)return;catalog=result;render();document.querySelector('#catalog-prev').disabled=catalogPage<=1;document.querySelector('#catalog-next').disabled=!catalog.has_next;document.querySelector('#catalog-page').textContent=`第 ${catalogPage} 頁`;
-    catalogLoading=false;
-    for(const selector of ['#audit-filter [name=store_id]','#cycles-form [name=store_id]']) {
-      const select=document.querySelector(selector), previous=select.value;
-      select.replaceChildren();if(selector.startsWith('#audit-filter'))option(select,'','全部');
-      for(const store of catalog.stores)option(select,store.id,`${store.code}${store.active?'':'（停用）'}`);
-      if(Array.from(select.options).some(o=>o.value===previous))select.value=previous;
-    }
+    catalogReady=false;
+    const seq=++catalogSequence;
+    try {
+      document.querySelector('#catalog-retry').hidden=true;
+      document.querySelector('#admin-list').replaceChildren();
+      document.querySelector('#admin-fields').replaceChildren();
+      editing=null;
+      const result=await api(`/api/admin/catalog?kind=${kind}&page=${catalogPage}&search=${encodeURIComponent(document.querySelector('#catalog-search input').value)}`);
+      if(seq!==catalogSequence)return;
+      catalog=result;catalogReady=true;catalogLoading=false;render();
+      document.querySelector('#catalog-prev').disabled=catalogPage<=1;
+      document.querySelector('#catalog-next').disabled=!catalog.has_next;
+      document.querySelector('#catalog-page').textContent=`第 ${catalogPage} 頁`;
+      for(const selector of ['#audit-filter [name=store_id]','#cycles-form [name=store_id]']) {
+        const select=document.querySelector(selector), previous=select.value;
+        select.replaceChildren();if(selector.startsWith('#audit-filter'))option(select,'','全部');
+        for(const store of catalog.stores)option(select,store.id,`${store.code}${store.active?'':'（停用）'}`);
+        if(Array.from(select.options).some(o=>o.value===previous))select.value=previous;
+      }
+    } catch(e) {
+      if(seq!==catalogSequence)return;
+      catalogReady=false;document.querySelector('#catalog-retry').hidden=false;
+      throw e;
+    } finally {if(seq===catalogSequence)catalogLoading=false;}
   }
+  document.querySelector('#catalog-retry').addEventListener('click',()=>{if(saving)return;refresh().then(()=>status.textContent='設定已重新載入。').catch(e=>status.textContent=`載入失敗：${e.message}，請重試載入設定。`);});
   document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{if(saving)return;kind=b.dataset.kind;catalogPage=1;document.querySelector('#catalog-search input').value='';refresh().catch(e=>status.textContent=e.message);}));
   document.querySelector('#new-record').addEventListener('click',()=>{if(!saving)edit();});
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(saving||catalogLoading)return;
+    event.preventDefault();if(saving)return;if(catalogLoading||!catalogReady){status.textContent='設定尚未載入，請重試載入設定後再儲存。';return;}
     const data={};for(const key of keys[kind]) {const el=form.elements[key];data[key]=key==='active'?el.checked:key==='store_ids'?Array.from(el.selectedOptions,o=>Number(o.value)):el.type==='number'||['store_id','product_id'].includes(key)?Number(el.value):el.value;}
     if(editing)data.revision=editing.revision;
     const controls=Array.from(document.querySelectorAll('#admin-form input, #admin-form select, #admin-form button, [data-kind], #new-record, #admin-list button, #catalog-search input, #catalog-search button, #catalog-prev, #catalog-next'));
     const previousDisabled=controls.map(el=>el.disabled);
     saving=true;controls.forEach(el=>el.disabled=true);
-    try {await api(`/api/admin/${kind}${editing?'/'+editing.id:''}`,editing?'PATCH':'POST',data);await refresh();status.textContent='設定已儲存；請重新產生補貨建議。';}catch(e){status.replaceChildren(document.createTextNode(e.message));for(const blocker of e.details?.blockers||[]){const link=document.createElement('a');link.href=blocker.url;link.textContent=' · '+blocker.reason;status.append(link);}}finally{saving=false;controls.forEach((el,index)=>el.disabled=previousDisabled[index]);}
+    try {await api(`/api/admin/${kind}${editing?'/'+editing.id:''}`,editing?'PATCH':'POST',data);try{await refresh();status.textContent='設定已儲存；請重新產生補貨建議。';}catch(e){status.textContent=`資料已儲存，畫面刷新失敗：${e.message}。請重試載入設定，不需再次提交。`;}}catch(e){status.replaceChildren(document.createTextNode(e.message));for(const blocker of e.details?.blockers||[]){const link=document.createElement('a');link.href=blocker.url;link.textContent=' · '+blocker.reason;status.append(link);}}finally{saving=false;controls.forEach((el,index)=>el.disabled=previousDisabled[index]);if(catalogReady){document.querySelector('#catalog-prev').disabled=catalogPage<=1;document.querySelector('#catalog-next').disabled=!catalog.has_next;}}
   });
   document.querySelector('#catalog-search').addEventListener('submit',e=>{e.preventDefault();if(saving)return;catalogPage=1;refresh().catch(e=>status.textContent=e.message);});
   for(const [id,delta] of [['catalog-prev',-1],['catalog-next',1]])document.getElementById(id).addEventListener('click',()=>{if(saving)return;catalogPage+=delta;refresh().catch(e=>status.textContent=e.message);});
   const clock=document.querySelector('#clock-form');
   const cycles=document.querySelector('#cycles-form');
-  cycles.addEventListener('submit',async event=>{event.preventDefault();const button=cycles.querySelector('button');button.disabled=true;try{const data=await api('/api/admin/cycles/prepare','POST',{store_id:Number(cycles.elements.store_id.value)});status.textContent=`本輪配送已備妥，新增 ${data.added} 個輪次。`;await refresh();}catch(e){status.textContent=e.message;}finally{button.disabled=false;}});
+  cycles.addEventListener('submit',async event=>{event.preventDefault();const button=cycles.querySelector('button');button.disabled=true;try{const data=await api('/api/admin/cycles/prepare','POST',{store_id:Number(cycles.elements.store_id.value)});status.textContent=`本輪配送已備妥，新增 ${data.added} 個輪次。`;try{await refresh();}catch(e){status.textContent=`配送輪次已儲存，畫面刷新失敗：${e.message}。請重試載入設定，不需再次提交。`;}}catch(e){status.textContent=e.message;}finally{button.disabled=false;}});
   if(clock)clock.addEventListener('submit',async event=>{event.preventDefault();const button=clock.querySelector('button');button.disabled=true;try{await api('/api/admin/clock','POST',{time:clock.elements.time.value+':00+08:00',paused:clock.elements.paused.checked});location.reload();}catch(e){status.textContent=e.message;}finally{button.disabled=false;}});
   async function audit() {
     const query=new URLSearchParams(new FormData(document.querySelector('#audit-filter')));query.set('page',auditPage);
