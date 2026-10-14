@@ -8,7 +8,7 @@ from app.contracts import OpenOrdersDTO, OpenSourceDTO, dto_dict
 from app.extensions import db
 from app.models import Store, User, Inventory, SalesDaily, BusinessClock, DeliveryCycle, StoreProduct, PolicyVersion, ReplenishmentRun, RunItem, AuditEvent
 from app.providers import get_provider, register_provider
-from app.services.clock import business_now, utc_naive
+from app.services.clock import business_now, round_window, utc_naive
 from app.services.errors import DomainError
 from app.services.forecasting import calculate
 from app.services.replenishment import ReplenishmentService
@@ -19,7 +19,7 @@ from conftest import login
 def case(seeded):
     store = db.session.execute(db.select(Store).where(Store.code=='DEMO1')).scalar_one()
     actor = db.session.execute(db.select(User).where(User.username=='manager1')).scalar_one()
-    b = business_now()
+    b = round_window(business_now())[0]
     db.session.get(BusinessClock,1).business_anchor = utc_naive(b+timedelta(minutes=20))
     stocks = db.session.execute(db.select(Inventory).where(Inventory.store_id==store.id).order_by(Inventory.product_id)).scalars().all()
     stocks[0].physical_qty = stocks[0].book_physical_qty = 8

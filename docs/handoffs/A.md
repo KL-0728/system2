@@ -231,3 +231,21 @@ A03 未發布前，B／C／D 請勿開始模組製作。目前沒有產品驗收
 - 補修儲存途中商品欄位仍可編輯，以及瀏覽器舊內容蓋過其他分頁新草稿：儲存暫停欄位，完成／失敗還原；本機快取紀錄草稿版本，版本不同恢復伺服器內容並提醒。
 - 實測：Edge11個案例通過（首輪10 passed／1測試腳本失敗；修正重複首次說明步驟後該項1 passed），Node2 passed、JavaScript語法通過；隔離test資料，demo未重設。先前後端完整79 passed，本次未改後端、不重新宣稱完整V驗收。
 - 現在請A依 [人工步驟](../a-manual-testing.md) 最新小節重啟Flask、Ctrl+F5，核對排除／預覽／125%字體與跨分頁草稿。B／D真實整合、收貨庫存閉環及規模測試仍待其交付。
+
+## 示範種子收貨起點補修（2026-10-14）
+
+- A整合補修，使用者明確授權修復後直接推main；同步前後HEAD／origin/main皆為`7929962`，起始工作目錄乾淨。本節測試使用此基準加本次修改，未開PR或部署。
+- 採用程式修復：`app/seed.py`新種子的暫停時鐘從台北2026-10-08 21:01開始，明確傳21:00給庫存／銷售種子。盤點、14日銷售窗口、政策、模型B、22:00截止及每日21:00配送不變；新收貨不再落於種子盤點涵蓋區間。對應V19、V31、V32、V44、V46；沒有規格、schema、migration、依賴或正式服務合約變更。
+- README同步新起點，補上舊資料庫仍停21:00時由admin往後推的指引；不重設既有demo。B的`inventory prepare-demo`相容舊21:00及新21:01起點，後續時間與既有操作仍保留。測試資料改為明確取21:00基準，真實HTTP／Edge閉環移除收貨前的推鐘步驟。
+- 環境：唯讀檢查發現3307未啟動，以`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_a_mysql.ps1`啟動既有實例；`python scripts/check_environment.py`確認demo／test皆PASS、migration head `a1410260003`。未初始化、清理或修改demo／.env。
+- MySQL自測：`python -m pytest -q tests/test_full_integration.py tests/test_inventory.py tests/test_replenishment.py tests/test_sales.py tests/test_foundation.py -p no:cacheprovider`為151 passed。全套`python -m pytest -q tests -p no:cacheprovider`首輪422 passed／7 failed：7項把當下時鐘當21:00或以相對時間測20:59，已修正測試基準，沒有放寬業務驗證。
+- 修正後執行`python -m pytest -q tests/test_audit_regressions.py tests/test_integrity_batch.py tests/test_foundation.py tests/test_system_hardening.py::test_cross_day_cycles_auto_prepare_and_window_remains_strict tests/browser_a_completion.py tests/browser_inventory.py tests/performance_integration.py -p no:cacheprovider`，36 passed：上述7項均通過，另含3項B起點／保留後續時間檢查、11項Edge桌面／手機與1000品項真實計算。B CLI測試只控制DB名稱標籤，SQL仍在隔離test交易；收貨閉環使用真實B／C／D，未用庫存替身。
+- `python tests/manual_inventory.py`全部數字檢查通過，含21:00及之前收貨仍回COUNT_COVERED_MOVEMENT、帳面／版本不變，收貨後盤點修訂與冪等正確，最後所有test資料回滾。`git diff --check`通過；無schema變更，不需db upgrade。未代填真人驗收或遠端Actions結果。
+
+現在請組員在自己的checkout更新main、依README重啟Flask後核對：
+
+1. 各自全新空白demo才執行`python -m flask --app wsgi seed-demo`；已有或錄影資料不要重設。`http://127.0.0.1:5000/login`以`manager1`登入，密碼為建立種子時本機DEMO_PASSWORD，新種子頁面應顯示台北2026-10-08 21:01:00。
+2. 在首頁「開始補貨」依一般流程確認並送單；`operator`於`/headquarters/fulfillment`完整接單、飲料出貨30件。`manager1`於收貨頁核對30件可售後確認，不調時鐘亦應成功；帳面20→50、不可售0，原請求重送仍50。
+3. 舊資料庫若停21:00：`admin`於`http://127.0.0.1:5000/admin`展開「示範環境設定」，將台北業務時間改為當日21:01並設定時鐘，再以原店長核對收貨應成功。不得倒退；舊時刻／盤點涵蓋異動的409保護已由上述服務數字檢查驗證。
+
+回報可貼：`已核對示範收貨起點，main SHA：…；新種子時間…；收貨前後帳面…→…；重送後…；失敗步驟／錯誤…。` 使用者已授權本次提交推送，無須另開Ready PR；人工結果仍由組員確認後記錄。

@@ -89,7 +89,7 @@ def test_second_unknown_has_new_task_and_new_receipt_deadline(seeded, client):
 def test_cross_day_cycles_auto_prepare_and_window_remains_strict(seeded, client):
     from app.models import BusinessClock, DeliveryCycle, Store
     clock = db.session.get(BusinessClock, 1)
-    clock.business_anchor += timedelta(days=1)
+    clock.business_anchor = clock.business_anchor.replace(minute=0) + timedelta(days=1)
     db.session.commit()
     assert login(client).status_code == 200
     store = db.session.execute(db.select(Store).where(Store.code == 'DEMO1')).scalar_one()

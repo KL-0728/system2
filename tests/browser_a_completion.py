@@ -1,12 +1,11 @@
 """Edge desktop/mobile: admin maintenance and actual B/C/D ordering loop."""
 from pathlib import Path
 from threading import Thread
-from datetime import timedelta
 import os
 import pytest
 from werkzeug.serving import make_server
 from app.extensions import db
-from app.models import User, DeliveryCycle, Inventory, BusinessClock
+from app.models import User, DeliveryCycle, Inventory
 from app.services.replenishment import ReplenishmentService
 from browser_fulfillment_full import login, logout, submit, stock
 
@@ -20,7 +19,6 @@ def real_server(seeded):
     run=ReplenishmentService().generate(store_id=store_id,actor_id=manager.id,cycle_id=cycle.id,
         expected_version=manager.stores[0].calculation_version,session=db.session)
     product_id=run.items[0].product_id
-    db.session.get(BusinessClock,1).business_anchor+=timedelta(minutes=1)
     db.session.commit()
     assert all(not row[1] for row in seeded.extensions['service_providers'].values())
     server=make_server('127.0.0.1',0,seeded,threaded=False)

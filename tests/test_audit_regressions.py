@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import event
 from app.extensions import db
 from app.models import User, Inventory, Product, BusinessClock
-from app.services.clock import business_now, utc_naive
+from app.services.clock import business_now, round_window, utc_naive
 from app.services.inventory import InventoryService
 from app.contracts import dto_dict
 from test_management import login, _write
@@ -102,7 +102,7 @@ def test_inventory_status_preserves_integrity_and_bounds_current_count_queries(s
     assert login(client).status_code == 200
     actor = db.session.execute(db.select(User).where(User.username == 'manager1')).scalar_one()
     store_id = actor.stores[0].id
-    now = business_now()
+    now = round_window(business_now())[0]
     rows = db.session.execute(db.select(Inventory).where(Inventory.store_id == store_id)
         .order_by(Inventory.product_id)).scalars().all()
     rows[0].book_physical_qty = -1

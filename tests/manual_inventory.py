@@ -18,7 +18,7 @@ from app.models import (BusinessClock, Inventory, InventoryCount,
     InventoryCountRevision, InventoryReconciliation, SalesDaily, SalesImportBatch, Store, User)
 from app.providers import get_provider
 from app.seed import seed_demo
-from app.services.clock import business_now, utc_naive
+from app.services.clock import aware, business_now, utc_naive
 from app.services.errors import DomainError
 
 
@@ -72,7 +72,7 @@ def run():
             rows = db.session.execute(db.select(Inventory).where(Inventory.store_id == store.id)
                 .order_by(Inventory.product_id)).scalars().all()
             row, negative = rows[:2]
-            b = business_now()
+            b = aware(row.counted_at)
             print(f'B01 real service; TEST DB {db.engine.url.host}:{db.engine.url.port}/{db.engine.url.database}')
             print('Synthetic manager1 / DEMO1; count cutoff 2026-10-08 21:00 Asia/Taipei; units: pieces.')
             print('Sales posting rows below are controlled persisted inputs, not the B02 CSV service.')

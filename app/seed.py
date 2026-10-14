@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from app.extensions import db
 from app.models import Store, User, Product, PolicyVersion, StoreProduct, DeliveryCycle, BusinessClock
 from app.services.clock import utc_naive, server_now
@@ -17,7 +17,8 @@ def seed_demo():
     if db.session.execute(db.select(Store.id).limit(1)).first():
         raise ValueError('資料庫已有門市，拒絕覆蓋；請使用安全 demo 重設')
     baseline = datetime(2026, 10, 8, 13, tzinfo=timezone.utc)
-    db.session.add(BusinessClock(id=1, business_anchor=utc_naive(baseline),
+    # Start after the checked count so new receipts are not covered by it.
+    db.session.add(BusinessClock(id=1, business_anchor=utc_naive(baseline + timedelta(minutes=1)),
         server_anchor=utc_naive(server_now()), paused=True))
     stores = [Store(code=f'DEMO{i}', name=f'虛構示範門市{i}', cutoff=time(22)) for i in (1, 2)]
     db.session.add_all(stores)
@@ -39,11 +40,10 @@ def seed_demo():
             db.session.flush()
             db.session.add(StoreProduct(store_id=store.id, product_id=product.id,
                 policy_version_id=policy.id, lead_days=1, safety_stock=10, capacity=100))
-        from datetime import timedelta
         for days in (1, 2, 3):
             db.session.add(DeliveryCycle(store_id=store.id, baseline_at=utc_naive(baseline),
                 cutoff_at=utc_naive(baseline + timedelta(hours=1)),
                 arrival_at=utc_naive(baseline + timedelta(days=days))))
     db.session.flush()
     from app.testing.seed import seed_inventory_sales
-    seed_inventory_sales()
+    seed_inventory_sales(baseline_at=baseline)

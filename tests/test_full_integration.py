@@ -24,7 +24,6 @@ def real_order(app, client):
     started = perf_counter()
     run = ReplenishmentService().generate(store_id=store.id, actor_id=manager.id,
         cycle_id=cycle.id, expected_version=store.calculation_version, session=db.session)
-    db.session.get(BusinessClock, 1).business_anchor += timedelta(minutes=1)
     print(f'real generation: {len(run.items)} products, {perf_counter()-started:.3f}s')
     db.session.commit()
     assert login(client).status_code == 200
@@ -52,7 +51,18 @@ def sources(order, run):
 
 
 def test_real_http_submit_ship_receive_and_retry(seeded, client):
+    # Fresh seed supports receiving without an admin clock adjustment.
+    now = business_now()
+    assert (now.hour, now.minute, now.second) == (13, 1, 0)
+    assert db.session.get(BusinessClock, 1).paused
+    baseline = now - timedelta(minutes=1)
+    assert all(stock.counted_at == baseline.replace(tzinfo=None)
+        for stock in db.session.execute(db.select(Inventory)).scalars())
     order, item, manager, cycle, run = real_order(seeded, client)
+    assert run.baseline_at == baseline
+    assert run.data_through_at == baseline
+    assert run.actual_generated_at == now
+    assert business_now() == now
     assert item.original_qty == 30
     assert sum(s.quantity for s in sources(order, run) if s.product_id == item.product_id and s.bucket == 'U') == 30
     assert db.session.execute(db.select(db.func.count(OperationalTask.id)).where(

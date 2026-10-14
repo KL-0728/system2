@@ -7,7 +7,7 @@ from werkzeug.serving import make_server
 
 from app.extensions import db
 from app.models import BusinessClock, Inventory, Store, User
-from app.services.clock import business_now, utc_naive
+from app.services.clock import business_now, round_window, utc_naive
 from app.services.inventory import InventoryService
 from datetime import timedelta
 from app.contracts import InventoryMutation
@@ -20,7 +20,7 @@ def data_server(seeded):
     actor = db.session.execute(db.select(User).where(User.username == 'manager1')).scalar_one()
     inventories = db.session.execute(db.select(Inventory).where(Inventory.store_id == store.id)
         .order_by(Inventory.product_id)).scalars().all()
-    b = business_now() + timedelta(days=1)
+    b = round_window(business_now())[0] + timedelta(days=1)
     db.session.get(BusinessClock, 1).business_anchor = utc_naive(b + timedelta(minutes=20))
     db.session.commit()
     case = dict(store=store, rows=inventories, b=b)

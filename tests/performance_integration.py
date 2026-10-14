@@ -6,14 +6,14 @@ from sqlalchemy import event
 from app.extensions import db
 from app.models import Product, User, StoreProduct, PolicyVersion, Inventory, SalesDaily, SalesImportBatch, DeliveryCycle
 from app.seed import POLICY
-from app.services.clock import business_now, utc_naive
+from app.services.clock import business_now, round_window, utc_naive
 from app.services.replenishment import ReplenishmentService
 
 
 def test_generate_1000_real_products(seeded, client):
     actor=db.session.execute(db.select(User).where(User.username=='manager1')).scalar_one()
     store=actor.stores[0]
-    baseline=business_now()
+    baseline=round_window(business_now())[0]
     batch=db.session.execute(db.select(SalesImportBatch).where(SalesImportBatch.store_id==store.id)).scalar_one()
     products=[Product(sku=f'SCALE{i:04}',name=f'合成商品{i}',pack_size=1) for i in range(990)]
     db.session.add_all(products);db.session.flush()

@@ -24,7 +24,7 @@ def sales_case(seeded, client):
     actor = db.session.execute(db.select(User).where(User.username == 'manager1')).scalar_one()
     inventories = db.session.execute(db.select(Inventory).where(Inventory.store_id == store.id)
         .order_by(Inventory.product_id)).scalars().all()
-    start = business_now()
+    start = round_window(business_now())[0]
     clock = db.session.get(BusinessClock, 1)
     clock.business_anchor = utc_naive(start + timedelta(days=1, minutes=20))
     db.session.commit()

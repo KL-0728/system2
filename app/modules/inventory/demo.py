@@ -1,5 +1,5 @@
 """Local B demo preparation. No deletion, reset, or credential changes."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import click
 from flask import current_app
@@ -26,7 +26,7 @@ def register_demo(bp):
             target = datetime(2026, 10, 9, 13, 20, tzinfo=timezone.utc)
             if clock is None:
                 raise click.ClickException('缺少示範時鐘，未修改資料')
-            if aware(clock.business_anchor) == start and clock.paused:
+            if aware(clock.business_anchor) in (start, start + timedelta(minutes=1)) and clock.paused:
                 if (db.session.execute(db.select(InventoryMovement.id).limit(1)).first()
                         or db.session.execute(db.select(InventoryCount.id).limit(1)).first()
                         or db.session.execute(db.select(SalesImportBatch.id).where(

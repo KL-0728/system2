@@ -15,7 +15,7 @@ from app.models import (AuditEvent, BusinessClock, CountSubmissionKey, Inventory
     InventoryCountRevision, InventoryMovement, InventoryReconciliation, Product,
     SalesDaily, SalesImportBatch, Store, User)
 from app.providers import get_provider
-from app.services.clock import aware, business_now, utc_naive
+from app.services.clock import aware, business_now, round_window, utc_naive
 from app.services.errors import DomainError
 from app.services.inventory import InventoryService
 
@@ -27,7 +27,7 @@ def case(seeded):
     actor = db.session.execute(select(User).where(User.username == 'manager1')).scalar_one()
     inventory = db.session.execute(select(Inventory).where(Inventory.store_id == store.id)
         .order_by(Inventory.product_id)).scalars().first()
-    b = business_now()
+    b = round_window(business_now())[0]
     # A03 seed already contains a checked 21:00 count. New receipts occur after it.
     clock = db.session.get(BusinessClock, 1)
     clock.business_anchor = utc_naive(b + timedelta(minutes=1))

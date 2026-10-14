@@ -6,9 +6,10 @@ from app.services.clock import business_now, utc_naive
 from app.testing.factories import require_fixture_mode, make_order, make_run
 
 
-def seed_inventory_sales():
+def seed_inventory_sales(*, baseline_at=None):
     # Explicit checked count baseline; historical seed must never deduct stock again.
     now = business_now()
+    baseline = baseline_at if baseline_at is not None else now
     products = db.session.execute(db.select(Product)).scalars().all()
     stores = db.session.execute(db.select(Store)).scalars().all()
     actor = db.session.execute(db.select(User).where(User.username == 'admin')).scalar_one()
@@ -21,9 +22,9 @@ def seed_inventory_sales():
         for product in products:
             db.session.add(Inventory(store_id=store.id, product_id=product.id, physical_qty=20,
                 unsellable_qty=0, book_physical_qty=20, book_unsellable_qty=0,
-                counted_at=utc_naive(now), updated_at=utc_naive(now)))
+                counted_at=utc_naive(baseline), updated_at=utc_naive(now)))
             for days in range(14):
-                end = now - timedelta(days=days)
+                end = baseline - timedelta(days=days)
                 db.session.add(SalesDaily(store_id=store.id, product_id=product.id, business_date=end.date(),
                     interval_start=utc_naive(end - timedelta(days=1)), interval_end=utc_naive(end),
                     sold_qty=20, was_stockout=False, is_open=True, batch_id=batch.id,
