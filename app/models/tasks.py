@@ -4,7 +4,8 @@ from .common import Entity, Versioned
 
 class OperationalTask(Entity, Versioned, db.Model):
     __tablename__ = 'operational_tasks'
-    __table_args__ = (db.UniqueConstraint('store_id', 'source_type', 'source_id', 'task_type'),)
+    __table_args__ = (db.UniqueConstraint('store_id', 'source_type', 'source_id', 'task_type', 'round'),)
+    round = db.Column(db.Integer, nullable=False, default=1, server_default='1')
     store_id = db.Column(db.Integer, db.ForeignKey('stores.id'), nullable=False, index=True)
     owner_role = db.Column(db.String(24), nullable=False)
     source_type = db.Column(db.String(40), nullable=False)

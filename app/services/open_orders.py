@@ -30,9 +30,18 @@ class OpenOrdersService:
         store = session.get(Store, store_id)
         if store is None:
             raise DomainError('NOT_FOUND', '門市不存在', 404)
+        live_shipments = db.select(ShipmentItem.id).where(ShipmentItem.order_item_id == OrderItem.id,
+            ShipmentItem.checked_qty < ShipmentItem.shipped_qty).exists()
+        live_replacements = db.select(ReplacementAuthorization.id).join(ReceiptVariance,
+            ReceiptVariance.id == ReplacementAuthorization.variance_id).join(ReceiptItem,
+            ReceiptItem.id == ReceiptVariance.receipt_item_id).join(ShipmentItem,
+            ShipmentItem.id == ReceiptItem.shipment_item_id).where(ShipmentItem.order_item_id == OrderItem.id,
+                ReplacementAuthorization.used_qty + ReplacementAuthorization.closed_qty < ReplacementAuthorization.authorized_qty).exists()
         rows = session.execute(db.select(OrderItem, Order).join(Order,
             Order.id == OrderItem.order_id).where(Order.store_id == store_id,
-            Order.fixture_only.is_(False)).order_by(OrderItem.id).execution_options(
+            Order.fixture_only.is_(False), db.or_(OrderItem.status.notin_(
+                ('RECEIVED', 'CLOSED_WITH_VARIANCE', 'REJECTED', 'CANCELLED')), live_shipments,
+                live_replacements)).order_by(OrderItem.id).execution_options(
             populate_existing=True).with_for_update(read=True)).all()
         # Batch child ledgers once instead of issuing queries for every item.
         ids = [item.id for item, _ in rows]
@@ -56,11 +65,9 @@ class OpenOrdersService:
                 .execution_options(populate_existing=True).with_for_update(read=True)).scalars()}
         sources = []
         for item, order in rows:
-            if item.status in ('REJECTED', 'CANCELLED'):
-                continue
             shipments = shipments_by_item[item.id]
             original_shipped = sum(s.shipped_qty for s in shipments if s.kind == 'original')
-            if item.committed_qty:
+            if item.committed_qty and item.status not in ('REJECTED', 'CANCELLED', 'RECEIVED', 'CLOSED_WITH_VARIANCE'):
                 remaining = max(0, item.committed_qty - original_shipped)
                 if remaining:
                     eta = aware(item.eta) if item.eta else aware(order.submitted_at)

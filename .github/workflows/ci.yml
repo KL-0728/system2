@@ -26,6 +26,12 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m flask --app wsgi db upgrade
       - run: python -m pytest
+      - run: pip install -r requirements-browser.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Real B C D browser order and receipt loop (isolated synthetic test DB)
+        run: python -m pytest -q tests/browser_a_completion.py tests/browser_system_hardening.py -k "real_three_stage or full_real_order_multi_item"
+        env:
+          BROWSER_CHANNEL: ''
       - uses: actions/setup-node@v4
         with:
           node-version: '24'

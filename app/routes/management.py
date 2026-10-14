@@ -33,8 +33,64 @@ def page():
 @bp.get('/api/admin/catalog')
 @require_role('admin')
 def catalog():
+    kind = request.args.get('kind')
+    if kind:
+        if kind not in MODELS:
+            raise DomainError('INVALID_INPUT', '管理分類無效', 400)
+        page = query_integer('page', '頁碼', default=1, maximum=1_000_000)
+        search = request.args.get('search', '').strip()
+        if len(search) > 120:
+            raise DomainError('INVALID_INPUT', '搜尋最多120字', 400)
+        model = MODELS[kind]
+        query = db.select(model)
+        if search:
+            columns = {'products': ('sku', 'name'), 'stores': ('code', 'name'), 'users': ('username',), 'policies': ()}[kind]
+            if columns:
+                query = query.where(db.or_(*(getattr(model, c).contains(search, autoescape=True) for c in columns)))
+            elif search.isdigit():
+                query = query.where(model.store_id == int(search))
+            else:
+                raise DomainError('INVALID_INPUT', '政策搜尋請填門市編號', 400)
+        rows = db.session.execute(query.order_by(model.id).offset((page-1)*50).limit(51)).scalars().all()
+        result = {k: [] for k in MODELS}
+        result[kind] = [serialize(kind, r) for r in rows[:50]]
+        # References remain compatible; fetch only necessary catalog types.
+        for reference in ('stores', 'products'):
+            if reference != kind:
+                required = set()
+                for row in rows[:50]:
+                    if kind == 'policies':
+                        required.add(row.store_id if reference == 'stores' else row.product_id)
+                    elif kind == 'users' and reference == 'stores':
+                        required.update(s.id for s in row.stores)
+                lookup = MODELS[reference]
+                first_ids = list(db.session.execute(db.select(lookup.id).order_by(lookup.id).limit(50)).scalars())
+                references = db.session.execute(db.select(lookup).where(db.or_(
+                    lookup.id.in_(first_ids), lookup.id.in_(required))).order_by(lookup.id)).scalars()
+                result[reference] = [dict(id=r.id, name=r.name, active=r.active,
+                    **({'sku':r.sku} if reference == 'products' else {'code':r.code})) for r in references]
+        return jsonify(**result, page=page, has_next=len(rows)>50)
     return jsonify({kind: [serialize(kind, r) for r in db.session.execute(
         db.select(model).order_by(model.id)).scalars()] for kind, model in MODELS.items()})
+
+
+@bp.get('/api/admin/lookups')
+@require_role('admin')
+def lookups():
+    kind = request.args.get('kind')
+    if kind not in ('products', 'stores'):
+        raise DomainError('INVALID_INPUT', '參照分類無效', 400)
+    value = request.args.get('search', '').strip()
+    if len(value) > 120:
+        raise DomainError('INVALID_INPUT', '搜尋最多120字', 400)
+    model = MODELS[kind]
+    code = model.sku if kind == 'products' else model.code
+    query = db.select(model)
+    if value:
+        query = query.where(db.or_(code.contains(value, autoescape=True), model.name.contains(value, autoescape=True)))
+    rows = db.session.execute(query.order_by(model.id).limit(51)).scalars().all()
+    return jsonify(rows=[dict(id=r.id, label=f'{getattr(r, "sku", getattr(r,"code", ""))} · {r.name}')
+        for r in rows[:50]], has_more=len(rows)>50)
 
 
 @bp.post('/api/admin/<kind>')

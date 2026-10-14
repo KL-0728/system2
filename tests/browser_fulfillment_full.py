@@ -56,6 +56,7 @@ def open_order(page, base, path, order_id):
     page.locator('#fulfillment-order').select_option(str(order_id))
     selected = page.locator('#fulfillment-order option:checked').inner_text()
     page.wait_for_function("label => document.querySelector('#fulfillment-detail > p')?.textContent.includes(label)", arg=selected)
+    page.wait_for_function("id => document.querySelector('#fulfillment-detail').dataset.loadedOrderId === String(id)",arg=order_id)
 
 
 def submit(page, title, fields=None, expected=200):
@@ -65,6 +66,10 @@ def submit(page, title, fields=None, expected=200):
         if control.evaluate('node => node.tagName') == 'SELECT':
             control.select_option(str(value))
         else:
+            if name == 'eta' and control.get_attribute('type') == 'datetime-local':
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+                value = datetime.fromisoformat(value).astimezone(ZoneInfo('Asia/Taipei')).replace(tzinfo=None).isoformat(timespec='minutes')
             control.fill(str(value))
     with page.expect_response(lambda r: r.request.method == 'POST' and '/api/fulfillment/' in r.url) as captured:
         form.get_by_role('button').click()

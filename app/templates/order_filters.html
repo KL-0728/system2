@@ -1,0 +1,8 @@
+<form id="order-filters" class="panel">
+  <label>單號<input name="number" maxlength="64" type="search"></label>
+  <label>送單起日（台北）<input name="from_date" type="date"></label>
+  <label>送單迄日（台北）<input name="to_date" type="date"></label>
+  <label>狀態<select name="status"><option value="">全部</option>
+    {% for code,label in [('SUBMITTED','待接單'),('ACCEPTED','已接單'),('CHANGE_PENDING','變更待確認'),('PARTIALLY_SHIPPED','部分出貨'),('SHIPPED','已出貨'),('PARTIALLY_RECEIVED','部分收貨'),('RECEIVED','已收貨'),('CLOSED_WITH_VARIANCE','差異結案'),('REJECTED','已拒絕'),('CANCELLED','已取消')] %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+  </select></label><button type="submit">搜尋訂單</button>
+</form>

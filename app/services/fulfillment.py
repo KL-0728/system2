@@ -267,15 +267,20 @@ class FulfillmentService:
                     raise DomainError('INVALID_STATE', '補送未授權或額度不足', 409)
                 auth.used_qty += qty
                 auth.version += 1
-            prepared.append((item, kind, qty, eta, auth_id))
+            promised_eta = item.eta if kind == 'original' else auth.eta
+            delayed = promised_eta is not None and eta > promised_eta
+            delay_reason = _text(line.get('delay_reason'), '延遲原因') if delayed and line.get('delay_reason') else None
+            if delayed and not delay_reason:
+                raise DomainError('DELAY_REASON_REQUIRED', '物流預估晚於承諾，請填延遲原因；承諾變更須另走供貨提案', 422)
+            prepared.append((item, kind, qty, eta, auth_id, delayed, delay_reason, promised_eta))
         shipment = Shipment(order_id=order_id, request_key=key, payload_hash=payload_hash,
             actor_id=actor_id, shipped_at=utc_naive(business_now()))
         session.add(shipment)
         session.flush()
-        for item, kind, qty, eta, auth_id in prepared:
+        for item, kind, qty, eta, auth_id, delayed, delay_reason, promised_eta in prepared:
             line = ShipmentItem(shipment_id=shipment.id, order_item_id=item.id,
                 kind=kind, authorization_id=auth_id, shipped_qty=qty, checked_qty=0,
-                eta=eta)
+                eta=eta, eta_disputed=delayed)
             session.add(line)
             session.flush()
             if kind == 'original':
@@ -286,7 +291,9 @@ class FulfillmentService:
                     'SHIPPED' if _shipped(session, item.id) >= item.committed_qty
                     else 'PARTIALLY_SHIPPED')
             _event(session, item, actor_id, 'SHIPPED', f'shipment_item:{line.id}',
-                {'quantity': qty, 'kind': kind, 'eta': aware(eta).isoformat()})
+                {'quantity': qty, 'kind': kind, 'eta': aware(eta).isoformat(),
+                 'promised_eta': aware(promised_eta).isoformat() if promised_eta else None,
+                 'delay_reason': delay_reason, 'delayed': delayed})
             _changed(session, item, order, actor_id, 'fulfillment.ship', {},
                 {'shipment_id': shipment.id, 'quantity': qty, 'kind': kind})
             from app.services.tasks import create_task, policy_setting
@@ -294,6 +301,9 @@ class FulfillmentService:
                 'receipt_minutes', 60)
             create_task(session, order.store_id, 'manager', 'shipment_item', str(line.id),
                 'receive_shipment', aware(eta) + timedelta(minutes=receipt_minutes), item.product_id)
+            if delayed:
+                create_task(session, order.store_id, 'operator', 'shipment_item', str(line.id),
+                    'investigate_shipment', business_now() + timedelta(minutes=60), item.product_id)
         return shipment
 
     def receive(self, *, shipment_id, actor_id, request_key, lines, session):
@@ -459,16 +469,26 @@ class FulfillmentService:
             raise DomainError('INVALID_STATE', '沒有待查的在途量', 409)
         if eta_value <= utc_naive(business_now()):
             raise DomainError('INVALID_ETA', '確認到貨時間須晚於現在', 422)
+        previous_eta = line.eta
         line.eta = eta_value
         line.eta_disputed = False
         line.version += 1
         _event(session, item, actor_id, 'SHIPMENT_RECONFIRMED',
-            f'reconfirmed:{line.id}:{line.version}', {'eta': eta, 'reason': reason})
+            f'reconfirmed:{line.id}:{line.version}', {'eta': eta, 'reason': reason,
+                'previous_eta': aware(previous_eta).isoformat(),
+                'previous_overdue': previous_eta < utc_naive(business_now())})
         _changed(session, item, order, actor_id, 'fulfillment.shipment_reconfirmed',
             {'disputed': True}, {'disputed': False, 'eta': eta})
-        from app.services.tasks import complete_task
+        from app.services.tasks import complete_task, create_task, policy_setting
         complete_task(session, order.store_id, 'shipment_item', str(line.id),
             'investigate_shipment', actor_id, {'eta': eta, 'reason': reason})
+        complete_task(session, order.store_id, 'shipment_item', str(line.id),
+            'receive_shipment', actor_id, {'action': 'rescheduled', 'previous_eta': aware(previous_eta).isoformat(),
+                'previous_overdue': previous_eta < utc_naive(business_now()), 'new_eta': eta})
+        session.flush()
+        create_task(session, order.store_id, 'manager', 'shipment_item', str(line.id),
+            'receive_shipment', aware(eta_value) + timedelta(minutes=policy_setting(session,
+                order.store_id, item.product_id, 'receipt_minutes', 60)), item.product_id)
         return line
 
     def propose_change(self, *, item_id, actor_id, committed_qty, eta,

@@ -4,13 +4,13 @@ from app.services.errors import DomainError
 
 def install_immutable_guards():
     from app.models import (AuditEvent, InventoryMovement, InventoryCountRevision, PolicyVersion,
-        ReplenishmentRun, RunItem, FulfillmentEvent, OrderItem, OrderConfirmation)
+        ReplenishmentRun, RunItem, FulfillmentEvent, OrderItem, OrderConfirmation, FulfillmentCommand)
 
     def immutable(mapper, connection, target):
         raise DomainError('IMMUTABLE_RECORD', '歷史快照與異動紀錄不得覆寫；請新增修訂', 409)
 
     for model in (AuditEvent, InventoryMovement, InventoryCountRevision, PolicyVersion,
-            ReplenishmentRun, RunItem, FulfillmentEvent):
+            ReplenishmentRun, RunItem, FulfillmentEvent, FulfillmentCommand):
         event.listen(model, 'before_update', immutable)
         event.listen(model, 'before_delete', immutable)
 

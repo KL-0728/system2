@@ -11,6 +11,35 @@ from app.services.errors import DomainError
 from app.services.version import bump_store
 from app.seed import POLICY
 
+
+def store_blockers(store_id):
+    from app.models import (Order, OrderItem, Shipment, ShipmentItem, ReceiptItem,
+        ReceiptVariance, ReplacementAuthorization, OperationalTask)
+    conditions = [
+        ('未結訂單', db.select(Order.id).where(Order.store_id == store_id,
+            Order.fixture_only.is_(False), Order.status.notin_(('RECEIVED', 'CLOSED_WITH_VARIANCE', 'REJECTED', 'CANCELLED')))),
+        ('待收貨', db.select(ShipmentItem.id).join(Shipment).join(Order).where(Order.store_id == store_id,
+            ShipmentItem.checked_qty < ShipmentItem.shipped_qty)),
+        ('未結差異', db.select(ReceiptVariance.id).join(ReceiptItem).join(ShipmentItem).join(Shipment).join(Order)
+            .where(Order.store_id == store_id, ReceiptVariance.status != 'CLOSED')),
+        ('未完成補送', db.select(ReplacementAuthorization.id).join(ReceiptVariance).join(ReceiptItem)
+            .join(ShipmentItem).join(Shipment).join(Order).where(Order.store_id == store_id,
+                ReplacementAuthorization.used_qty + ReplacementAuthorization.closed_qty < ReplacementAuthorization.authorized_qty)),
+        ('未完成待辦', db.select(OperationalTask.id).where(OperationalTask.store_id == store_id,
+            OperationalTask.completed_at.is_(None))),
+    ]
+    return [{'reason': label, 'url': f'/headquarters/fulfillment?store_id={store_id}'}
+        for label, query in conditions if db.session.execute(query.limit(1).with_for_update(read=True)).first()]
+
+
+def product_has_history(product_id):
+    from app.models import InventoryMovement, SalesDaily, OrderItem, InventoryCount
+    for model in (Inventory, InventoryMovement, SalesDaily, OrderItem, InventoryCount):
+        if db.session.execute(db.select(model.id).where(model.product_id == product_id).limit(1)
+                .with_for_update(read=True)).first():
+            return True
+    return False
+
 MODELS = {'products': Product, 'stores': Store, 'users': User, 'policies': StoreProduct}
 POLICY_FIELDS = ('lead_days', 'safety_stock', 'capacity', 'absolute_large_qty',
     'deviation_floor', 'deviation_multiplier', 'confirmation_minutes', 'deduction_minutes',
@@ -33,6 +62,11 @@ def text(value, label, limit):
     return value.strip()
 
 
+def _policy_version(identity):
+    return db.session.execute(db.select(PolicyVersion).where(PolicyVersion.id == identity)
+        .execution_options(populate_existing=True).with_for_update(read=True)).scalar_one()
+
+
 def state(kind, row):
     if kind == 'products':
         result = {k: getattr(row, k) for k in ('id', 'sku', 'name', 'base_unit', 'pack_size', 'active')}
@@ -43,7 +77,7 @@ def state(kind, row):
         result = {k: getattr(row, k) for k in ('id', 'username', 'role', 'active')}
         result['store_ids'] = sorted(s.id for s in row.stores)
     else:
-        version = db.session.get(PolicyVersion, row.policy_version_id)
+        version = _policy_version(row.policy_version_id)
         result = dict(id=row.id, store_id=row.store_id, product_id=row.product_id,
             active=row.active, version=version.version, **version.parameters)
     return result
@@ -61,7 +95,7 @@ def serialize(kind, row):
 
 
 def publish_policy(row, parameters):
-    old = db.session.get(PolicyVersion, row.policy_version_id) if row.policy_version_id else None
+    old = _policy_version(row.policy_version_id) if row.policy_version_id else None
     version = PolicyVersion(store_id=row.store_id, product_id=row.product_id,
         version=old.version + 1 if old else 1, effective_at=utc_naive(business_now()),
         parameters=parameters)
@@ -78,7 +112,13 @@ def save(actor, kind, data, row_id=None):
     if kind not in MODELS or not isinstance(data, dict):
         invalid('請提供有效的管理資料')
     # All management writes use the same ascending store lock order as B/C/D.
-    stores = db.session.execute(db.select(Store).order_by(Store.id)
+    store_query = db.select(Store)
+    if kind == 'stores' and row_id:
+        store_query = store_query.where(Store.id == row_id)
+    elif kind == 'policies':
+        target_id = integer(data.get('store_id'), '門市', 1)
+        store_query = store_query.where(Store.id == target_id)
+    stores = db.session.execute(store_query.order_by(Store.id)
         .execution_options(populate_existing=True).with_for_update()).scalars().all()
     actor = db.session.execute(db.select(User).where(User.id == actor.id)
         .execution_options(populate_existing=True).with_for_update()).scalar_one()
@@ -102,6 +142,8 @@ def save(actor, kind, data, row_id=None):
         pack = integer(data.get('pack_size'), '箱入數', 1)
         if row and row.sku != sku:
             invalid('既有商品代碼不可修改')
+        if row and row.base_unit != unit and product_has_history(row.id):
+            raise DomainError('BASE_UNIT_LOCKED', '商品已有庫存或交易紀錄，基本單位不可修改；請另建 SKU', 409)
         row = row or Product(sku=sku)
         row.name, row.base_unit, row.pack_size, row.active = name, unit, pack, active
         db.session.add(row)
@@ -109,7 +151,7 @@ def save(actor, kind, data, row_id=None):
         policies = db.session.execute(db.select(StoreProduct).where(StoreProduct.product_id == row.id)
             .order_by(StoreProduct.store_id).with_for_update()).scalars().all()
         for policy in policies:
-            params = dict(db.session.get(PolicyVersion, policy.policy_version_id).parameters)
+            params = dict(_policy_version(policy.policy_version_id).parameters)
             if params['pack_size'] != pack:
                 publish_policy(policy, {**params, 'pack_size': pack})
             affected.add(policy.store_id)
@@ -120,6 +162,11 @@ def save(actor, kind, data, row_id=None):
             invalid('本版日常訂貨截止固定為22:00，須與配送輪次一致')
         if row and row.code != code:
             invalid('既有門市代碼不可修改')
+        if row and row.active and not active:
+            blockers = store_blockers(row.id)
+            if blockers:
+                raise DomainError('STORE_HAS_UNFINISHED_WORK', '門市仍有未完成作業，請先收尾再停用', 409,
+                    {'blockers': blockers, 'store_id': row.id})
         row = row or Store(code=code, cutoff=time(22), timezone='Asia/Taipei')
         row.name, row.active = name, active
         db.session.add(row)
@@ -155,12 +202,13 @@ def save(actor, kind, data, row_id=None):
     else:
         store_id = integer(data.get('store_id'), '門市', 1)
         product_id = integer(data.get('product_id'), '商品', 1)
-        product = db.session.get(Product, product_id)
+        product = db.session.execute(db.select(Product).where(Product.id == product_id)
+            .execution_options(populate_existing=True).with_for_update(read=True)).scalar_one_or_none()
         if not product or store_id not in {s.id for s in stores}:
             invalid('門市或商品不存在')
         if row and (row.store_id, row.product_id) != (store_id, product_id):
             invalid('政策的門市與商品不可修改')
-        params = dict(db.session.get(PolicyVersion, row.policy_version_id).parameters) if row else dict(POLICY)
+        params = dict(_policy_version(row.policy_version_id).parameters) if row else dict(POLICY)
         for field in POLICY_FIELDS:
             minimum = 0 if field in ('safety_stock', 'capacity') else 1
             maximum = 365 if field in ('lead_days', 'manual_valid_days') else 8760 if field == 'variance_hours' else 1000000
@@ -195,14 +243,16 @@ def save(actor, kind, data, row_id=None):
 
 def prepare_cycles(actor, store_id):
     from app.services.version import lock_store
-    if not actor or actor.role != 'admin' or not actor.active:
-        raise DomainError('FORBIDDEN', '僅管理者可準備輪次', 403)
+    from app.services.access import authorize_store
+    authorize_store(actor, store_id, roles=('manager', 'admin'))
     store = lock_store(integer(store_id, '門市', 1))
     baseline, cutoff = round_window(business_now())
     lead_days = set(db.session.execute(db.select(StoreProduct.lead_days).where(
-        StoreProduct.store_id == store.id, StoreProduct.active.is_(True))).scalars()) | {1,2,3}
+        StoreProduct.store_id == store.id, StoreProduct.active.is_(True)).order_by(StoreProduct.id)
+        .with_for_update(read=True)).scalars()) | {1,2,3}
     existing = {r.arrival_at for r in db.session.execute(db.select(DeliveryCycle).where(
-        DeliveryCycle.store_id == store.id, DeliveryCycle.baseline_at == utc_naive(baseline))).scalars()}
+        DeliveryCycle.store_id == store.id, DeliveryCycle.baseline_at == utc_naive(baseline))
+        .order_by(DeliveryCycle.id).execution_options(populate_existing=True).with_for_update()).scalars()}
     added = 0
     for days in sorted(lead_days):
         arrival = utc_naive(baseline + timedelta(days=days))

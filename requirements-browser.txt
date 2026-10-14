@@ -1,0 +1,2 @@
+# Match the browser automation version used for local regression evidence.
+playwright==1.63.0

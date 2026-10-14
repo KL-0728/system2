@@ -31,6 +31,7 @@ class DraftItem(Entity, db.Model):
 
 class Order(Entity, Versioned, db.Model):
     __tablename__ = 'orders'
+    __table_args__ = (db.Index('ix_orders_store_submitted_id', 'store_id', 'submitted_at', 'id'),)
     store_id = db.Column(db.Integer, db.ForeignKey('stores.id'), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     draft_id = db.Column(db.Integer, db.ForeignKey('order_drafts.id'), nullable=False, unique=True)

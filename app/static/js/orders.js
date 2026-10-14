@@ -27,7 +27,7 @@
     const errorTarget = document.getElementById('orders-error');
     errorTarget.hidden = true;
     try {
-      const data = await load(`/api/orders?store_id=${list.dataset.storeId}&page=${page}`);
+      const data = await load(`/api/orders?store_id=${list.dataset.storeId}&page=${page}&${new URLSearchParams(new FormData(document.querySelector("#order-filters")))}`);
       if (requestId !== pageRequest) return;
       list.innerHTML = data.orders.length ? data.orders.map((order) => `<article class="order-card"><a href="/store/orders/${order.id}?store_id=${list.dataset.storeId}">${escapeHtml(order.number)}</a> <span class="status-chip">${statusLabel(order.status)}</span><p>送出時間：${escapeHtml(timeLabel(order.submitted_at))}</p></article>`).join('') : '<div class="empty-state"><strong>尚無正式訂單</strong><p>從補貨工作台建立並確認送出。</p></div>';
       const pager = document.getElementById('orders-pagination');
@@ -39,7 +39,7 @@
       errorTarget.textContent = error.message; errorTarget.hidden = false;
     }
   }
-  if (list) loadPage();
+  if (list) {loadPage();document.querySelector("#order-filters").addEventListener("submit",e=>{e.preventDefault();loadPage(1);});}
 
   const detail = document.getElementById('order-detail');
   if (detail) load(`/api/orders/${detail.dataset.orderId}?store_id=${detail.dataset.storeId}`).then((order) => {

@@ -7,5 +7,6 @@ from .replenishment import ManualForecastOverride, ReplenishmentRun, RunItem
 from .order import OrderDraft, DraftItem, Order, OrderItem, OrderConfirmation, SubmissionKey
 from .fulfillment import SupplyChangeRequest, Shipment, ShipmentItem, Receipt, ReceiptItem, ReceiptVariance, ReplacementAuthorization, FulfillmentEvent
 from .tasks import OperationalTask
+from .fulfillment_command import FulfillmentCommand
 from .immutability import install_immutable_guards
 install_immutable_guards()

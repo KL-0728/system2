@@ -1,4 +1,5 @@
 """B-owned run endpoints; canonical v1 paths and session-scoped provider calls."""
+from datetime import timedelta
 from flask import g, jsonify, render_template, request
 from app.contracts import dto_dict, quantity
 from app.extensions import db
@@ -78,9 +79,12 @@ def register_replenishment(bp):
             store = authorize(db.session, store_id(query_integer('store_id', '門市')), g.user.id, lock=True)
             now = _business_now(db.session)
             b, cutoff = round_window(now)
+            from app.services.management import prepare_cycles
+            prepare_cycles(g.user, store.id)
             cycles = db.session.execute(db.select(DeliveryCycle).where(DeliveryCycle.store_id == store.id,
                 DeliveryCycle.baseline_at == b.replace(tzinfo=None), DeliveryCycle.cancelled.is_(False))
-                .order_by(DeliveryCycle.arrival_at)).scalars().all()
+                .order_by(DeliveryCycle.arrival_at).execution_options(populate_existing=True)
+                .with_for_update(read=True)).scalars().all()
             runs = db.session.execute(db.select(ReplenishmentRun).where(ReplenishmentRun.store_id == store.id,
                 ReplenishmentRun.model_version == MODEL_VERSION)
                 .order_by(ReplenishmentRun.id.desc()).limit(30)).scalars().all()
@@ -88,6 +92,8 @@ def register_replenishment(bp):
             provider = current_app.extensions['service_providers'].get('open_orders')
             result = dict(store_id=store.id, store_version=store.calculation_version, business_now=now,
                 baseline_at=b, cutoff_at=cutoff, can_generate=b <= now < cutoff,
+                next_open_at=b if now < b else b + timedelta(days=1),
+                window_status='open' if b <= now < cutoff else 'before_open' if now < b else 'closed',
                 source_provider=dict(name=type(provider[0]).__name__ if provider else '尚未接入',
                     test_only=provider[1] if provider else False),
                 products=manual.options(store_id=store.id,actor_id=g.user.id,session=db.session),

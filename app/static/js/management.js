@@ -5,6 +5,7 @@
   const policyKeys = ['lead_days','safety_stock','capacity','absolute_large_qty','deviation_floor','deviation_multiplier','confirmation_minutes','deduction_minutes','supply_response_minutes','receipt_minutes','variance_hours','contact_minutes','manual_valid_days'];
   const keys = {products:['sku','name','base_unit','pack_size','active'],stores:['code','name','active'],users:['username','role','password','store_ids','active'],policies:['store_id','product_id',...policyKeys,'active']};
   const defaults = {base_unit:'件',pack_size:1,active:true,role:'manager',lead_days:1,safety_stock:10,capacity:100,absolute_large_qty:100,deviation_floor:100,deviation_multiplier:3,confirmation_minutes:5,deduction_minutes:60,supply_response_minutes:60,receipt_minutes:60,variance_hours:24,contact_minutes:60,manual_valid_days:7};
+  let catalogPage=1,catalogSequence=0,catalogLoading=false;
   let catalog, kind='products', editing=null, auditPage=1, saving=false;
   const status=document.querySelector('#admin-status'), form=document.querySelector('#admin-form');
   async function api(path,method='GET',body) {
@@ -12,7 +13,7 @@
     if(method!=='GET') headers['X-CSRFToken']=(await (await fetch('/api/auth/csrf')).json()).csrf_token;
     const response=await fetch(path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
     const data=await response.json();
-    if(!response.ok) throw new Error(data.error?.message || '操作失敗');
+    if(!response.ok) {const failure=new Error(data.error?.message || '操作失敗');failure.details=data.error?.details;throw failure;}
     return data;
   }
   function option(select,value,label) {const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}
@@ -42,6 +43,12 @@
         toggle.dataset.passwordToggle=input.id;toggle.setAttribute('aria-controls',input.id);toggle.setAttribute('aria-pressed','false');toggle.textContent='顯示密碼';
         group.append(input,toggle);label.append(group);
       } else label.append(input);
+      if(['store_ids','store_id','product_id'].includes(key) && !input.disabled) {
+        const search=document.createElement('input');search.type='search';search.placeholder=key==='product_id'?'搜尋商品名稱／代碼':'搜尋門市名稱／代碼';search.setAttribute('aria-label',search.placeholder);
+        let sequence=0;
+        search.addEventListener('input',async()=>{const seq=++sequence;try{const data=await api(`/api/admin/lookups?kind=${key==='product_id'?'products':'stores'}&search=${encodeURIComponent(search.value)}`);if(seq!==sequence||saving)return;const retained=Array.from(input.selectedOptions,o=>({id:o.value,label:o.textContent}));input.replaceChildren();const ids=new Set();for(const r of [...retained,...data.rows])if(!ids.has(String(r.id))){ids.add(String(r.id));option(input,r.id,r.label);}for(const o of input.options)o.selected=retained.some(r=>String(r.id)===o.value);status.textContent=data.has_more?'符合超過50筆，請輸入更完整名稱或代碼。':'';}catch(e){if(seq===sequence)status.textContent=e.message;}});
+        label.append(search);
+      }
       fields.append(label);
     }
   }
@@ -58,7 +65,12 @@
     edit();
   }
   async function refresh() {
-    catalog=await api('/api/admin/catalog');render();
+    catalogLoading=true;
+    document.querySelector('#admin-list').replaceChildren();
+    document.querySelector('#admin-fields').replaceChildren();
+    editing=null;
+    const seq=++catalogSequence;const result=await api(`/api/admin/catalog?kind=${kind}&page=${catalogPage}&search=${encodeURIComponent(document.querySelector('#catalog-search input').value)}`);if(seq!==catalogSequence)return;catalog=result;render();document.querySelector('#catalog-prev').disabled=catalogPage<=1;document.querySelector('#catalog-next').disabled=!catalog.has_next;document.querySelector('#catalog-page').textContent=`第 ${catalogPage} 頁`;
+    catalogLoading=false;
     for(const selector of ['#audit-filter [name=store_id]','#cycles-form [name=store_id]']) {
       const select=document.querySelector(selector), previous=select.value;
       select.replaceChildren();if(selector.startsWith('#audit-filter'))option(select,'','全部');
@@ -66,17 +78,19 @@
       if(Array.from(select.options).some(o=>o.value===previous))select.value=previous;
     }
   }
-  document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{if(saving)return;kind=b.dataset.kind;render();}));
+  document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{if(saving)return;kind=b.dataset.kind;catalogPage=1;document.querySelector('#catalog-search input').value='';refresh().catch(e=>status.textContent=e.message);}));
   document.querySelector('#new-record').addEventListener('click',()=>{if(!saving)edit();});
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(saving)return;
+    event.preventDefault();if(saving||catalogLoading)return;
     const data={};for(const key of keys[kind]) {const el=form.elements[key];data[key]=key==='active'?el.checked:key==='store_ids'?Array.from(el.selectedOptions,o=>Number(o.value)):el.type==='number'||['store_id','product_id'].includes(key)?Number(el.value):el.value;}
     if(editing)data.revision=editing.revision;
-    const controls=Array.from(document.querySelectorAll('#admin-form input, #admin-form select, #admin-form button, [data-kind], #new-record, #admin-list button'));
+    const controls=Array.from(document.querySelectorAll('#admin-form input, #admin-form select, #admin-form button, [data-kind], #new-record, #admin-list button, #catalog-search input, #catalog-search button, #catalog-prev, #catalog-next'));
     const previousDisabled=controls.map(el=>el.disabled);
     saving=true;controls.forEach(el=>el.disabled=true);
-    try {await api(`/api/admin/${kind}${editing?'/'+editing.id:''}`,editing?'PATCH':'POST',data);await refresh();status.textContent='設定已儲存；請重新產生補貨建議。';}catch(e){status.textContent=e.message;}finally{saving=false;controls.forEach((el,index)=>el.disabled=previousDisabled[index]);}
+    try {await api(`/api/admin/${kind}${editing?'/'+editing.id:''}`,editing?'PATCH':'POST',data);await refresh();status.textContent='設定已儲存；請重新產生補貨建議。';}catch(e){status.replaceChildren(document.createTextNode(e.message));for(const blocker of e.details?.blockers||[]){const link=document.createElement('a');link.href=blocker.url;link.textContent=' · '+blocker.reason;status.append(link);}}finally{saving=false;controls.forEach((el,index)=>el.disabled=previousDisabled[index]);}
   });
+  document.querySelector('#catalog-search').addEventListener('submit',e=>{e.preventDefault();if(saving)return;catalogPage=1;refresh().catch(e=>status.textContent=e.message);});
+  for(const [id,delta] of [['catalog-prev',-1],['catalog-next',1]])document.getElementById(id).addEventListener('click',()=>{if(saving)return;catalogPage+=delta;refresh().catch(e=>status.textContent=e.message);});
   const clock=document.querySelector('#clock-form');
   const cycles=document.querySelector('#cycles-form');
   cycles.addEventListener('submit',async event=>{event.preventDefault();const button=cycles.querySelector('button');button.disabled=true;try{const data=await api('/api/admin/cycles/prepare','POST',{store_id:Number(cycles.elements.store_id.value)});status.textContent=`本輪配送已備妥，新增 ${data.added} 個輪次。`;await refresh();}catch(e){status.textContent=e.message;}finally{button.disabled=false;}});

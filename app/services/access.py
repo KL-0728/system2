@@ -1,18 +1,27 @@
 from functools import wraps
 from hmac import compare_digest
-from flask import g, session
+from flask import g, session, current_app
+from time import time
 from app.extensions import db
 from app.models.identity import User, Store
 from app.services.errors import DomainError
 
 
 def load_user():
+    now = time()
+    last = session.get('last_activity')
+    if session.get('user_id') and isinstance(last, (int, float)) and now - last > current_app.config.get('IDLE_TIMEOUT_SECONDS', 1800):
+        session.clear()
+        g.pop('csrf_token', None)
     g.user = db.session.get(User, session['user_id']) if session.get('user_id') else None
     token = session.get('credential_token')
     if g.user and (not g.user.active or not isinstance(token, str)
             or not compare_digest(token, g.user.session_token())):
         session.clear()
+        g.pop('csrf_token', None)
         g.user = None
+    if g.user:
+        session['last_activity'] = now
 
 
 def require_role(*roles):

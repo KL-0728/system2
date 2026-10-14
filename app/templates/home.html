@@ -16,7 +16,7 @@
 <section class="panel"><div class="dashboard-section-heading"><h2>待處理事項{% if tasks %}（{{ tasks|length }}）{% endif %}</h2>
 {% if store %}<a href="{{ url_for('fulfillment.receiving_page', store_id=store.id) }}">查看全部待辦</a>{% endif %}</div>
 {% set task_names = {'respond_order':'回覆接單','receive_shipment':'核對收貨','investigate_shipment':'查明到貨','respond_change':'回覆供貨變更','resolve_variance':'處理收貨差異','contact_headquarters':'聯絡統家','resolve_extra':'處理多送品'} %}
-{% for task in tasks[:5] %}<div class="task-row"><div><strong>{{ task_names.get(task.type, '待處理作業') }}</strong><small>期限 <time data-local-time="{{ task.due_at }}">{{ task.due_at }}</time></small></div><span class="status-chip{% if task.overdue %} overdue{% endif %}">{{ '已逾期' if task.overdue else '待處理' }}</span></div>
+{% for task in tasks[:5] %}<div class="task-row"><div><a href="{{ task.url }}"><strong>{{ task_names.get(task.type, '待處理作業') }}</strong></a><small>期限 <time data-local-time="{{ task.due_at }}">{{ task.due_at }}</time></small></div><span class="status-chip{% if task.overdue %} overdue{% endif %}">{{ '已逾期' if task.overdue else '待處理' }}</span></div>
 {% else %}<div class="empty-state"><strong>目前沒有待處理事項</strong><p>接單、供貨變更與收貨需要您處理時，會集中顯示在這裡。</p></div>{% endfor %}
 </section>
 <section class="panel"><div class="dashboard-section-heading"><h2>{{ '今天的補貨' if store else '供貨作業' }}</h2></div>
@@ -30,7 +30,8 @@
 {% if store %}<section class="panel"><div class="dashboard-section-heading"><h2>繼續未送出的草稿</h2></div>
 {% for draft in drafts %}<div class="draft-link"><span>草稿 #{{ draft.id }} · <time data-local-time="{{ draft.updated_at.isoformat() }}Z">{{ draft.updated_at }}</time></span><a href="{{ url_for('ordering.ordering_page', store_id=store.id, draft_id=draft.id) }}">繼續編輯 →</a></div>
 {% else %}<p class="muted">目前沒有草稿。開始補貨後，未送出的內容可儲存並稍後繼續。</p>{% endfor %}</section>
-<section class="panel"><div class="dashboard-section-heading"><h2>訂單與決策紀錄</h2></div><p>查看原訂量、承諾、出貨與實收數量，也能回看當時的建議與調整理由。</p><a class="button-link secondary" href="{{ url_for('ordering.orders_page', store_id=store.id) }}">查看訂單</a></section>{% endif %}
+{% if archived_drafts %}<section class="panel"><h2>最近封存草稿</h2>{% for draft in archived_drafts %}<p><a href="{{ url_for('ordering.ordering_page',store_id=store.id,draft_id=draft.id) }}">草稿 #{{ draft.id }}：查看保存內容／帶回人工調整</a></p>{% endfor %}</section>{% endif %}
+<section class="panel"><div class="dashboard-section-heading"><h2>訂單與決策紀錄</h2></div><p>查看原訂量、承諾、出貨與實收數量，也能回看當時的建議與調整理由。</p><a class="button-link secondary" href="{{ url_for('ordering.orders_page', store_id=store.id) }}">查看訂單</a> <a href="/store/model-performance?store_id={{ store.id }}">預測與實際銷量比較</a></section>{% endif %}
 </div>
 {% if module_dev %}<p><a href="/modules/{{ module_dev|lower }}/">{{ module_dev }} 模組資料檢查</a></p>{% endif %}
 {% else %}<section class="panel empty-state"><h1>營運協作平台</h1><p>登入您的工作區，查看門市補貨、供貨與收貨進度。</p><a class="button-link" href="/login">登入</a></section>{% endif %}

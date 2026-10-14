@@ -46,6 +46,8 @@ def create_app(overrides=None):
     app.register_blueprint(bp)
     from app.routes.management import bp as management_bp
     app.register_blueprint(management_bp)
+    from app.routes.model_performance import bp as model_performance_bp
+    app.register_blueprint(model_performance_bp)
 
     @app.before_request
     def before():
@@ -117,6 +119,7 @@ def create_app(overrides=None):
     @app.get('/')
     def home():
         store, drafts, run, tasks = None, [], None, []
+        archived_drafts = []
         summary = {'orders': 0, 'pending': 0, 'receiving': 0, 'drafts': 0}
         if g.user and g.user.role in ('manager', 'admin'):
             from app.models import Store, OrderDraft
@@ -129,6 +132,9 @@ def create_app(overrides=None):
                 run = latest_run(store.id)
                 drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.user_id == g.user.id,
                     OrderDraft.store_id == store.id, OrderDraft.status == 'DRAFT').order_by(
+                    OrderDraft.updated_at.desc()).limit(5)).scalars().all()
+                archived_drafts = db.session.execute(db.select(OrderDraft).where(OrderDraft.user_id == g.user.id,
+                    OrderDraft.store_id == store.id, OrderDraft.status == 'ARCHIVED').order_by(
                     OrderDraft.updated_at.desc()).limit(5)).scalars().all()
                 summary['drafts'] = db.session.execute(db.select(db.func.count(OrderDraft.id)).where(
                     OrderDraft.user_id == g.user.id, OrderDraft.store_id == store.id,
@@ -152,10 +158,10 @@ def create_app(overrides=None):
                     Store.id == OperationalTask.store_id).where(Store.active.is_(True),
                     OperationalTask.owner_role == 'operator', OperationalTask.completed_at.is_(None))
                     .order_by(OperationalTask.due_at, OperationalTask.id)).scalars().all()
-                tasks = [dict(type=row.task_type, due_at=aware(row.due_at).isoformat(),
-                    overdue=aware(row.due_at) < now, store_id=row.store_id) for row in rows]
+                from app.services.tasks import serialize_tasks
+                tasks = serialize_tasks(db.session, rows, 'operator')
         return render_template('home.html', store=store, drafts=drafts, run=run, tasks=tasks,
-            summary=summary, ordering_available='runs' in app.extensions['service_providers'])
+            summary=summary, archived_drafts=archived_drafts, ordering_available='runs' in app.extensions['service_providers'])
 
     @app.get('/api/stores/<int:store_id>/context')
     @require_role()

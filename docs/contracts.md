@@ -100,3 +100,21 @@ tests/test_contracts.py 是凍結消費端測試；ControlledOpenOrders 支援 n
 `make_run(session, store_id=None, scenario='normal')` 建立持久化 run／run_items，供 C 真實草稿 FK 使用；`make_order(session, store_id=None, product_id=None, quantity=30)` 建立共用正式訂單表工廠資料，Order.fixture_only=True，供 D 自身履約服務測試。兩者只限 test 或明示本機模組開發模式，不可在整合／正式模式旁路確認送單。
 
 正式模型與工廠不是業務服務；B 的庫存／計算、C 的草稿／確認／提交、D 的履約仍由各自實作。A05 關閉所有替身，重新驗真實跨模組原子性與來源；A06 才判定 V 驗收。
+
+## 2026-10-14 相容擴充（spec 1.5，DTO v1）
+
+- D整店未結來源允許本店停用商品。B驗證來源商品属于本店StoreProduct（含停用），仍驗門市／版本／時間／唯一性；只對啟用品項計算，不刪D來源。
+- OrderItem.eta保存商業承諾，ShipmentItem.eta保存物流預估；出貨lines新增可選delay_reason，晚於承諾／授權ETA時必填。物流延遲先eta_disputed列RISK、建立investigate_shipment。SHIPPED事件增promised_eta／delay_reason／delayed；SHIPMENT_RECONFIRMED增previous_eta／previous_overdue，更新物流ETA不覆寫商業承諾。
+- OperationalTask新增round整數預設1；唯一鍵為store_id＋source_type＋source_id＋task_type＋round。完成舊round不修改due，重新異常／排期新建round；目前同來源類型最多一個有效待辦，由門市鎖保護。task JSON追加round／store_id／url／was_overdue，既有欄位不變。
+- 履約原有五種native冪等保留；其他狀態transition可選request_key，使用fulfillment_commands保存成功action／payload_hash／result_id，唯一order_id＋actor_id＋request_key。原始功能內容標準化hash，不含expected_version；成功重試仍驗身份／門市／角色，再回原結果；同鍵不同action或內容409。HTTP適配層在同交易保存結果，不改service原簽章。聯絡待辦另以actor＋request_key來源hash及原reason／outcome重放。
+- 門市鎖後刷新身份／關聯，再鎖訂單及原資料，才驗新寫入版本；成功重試不繞過身份與跨店保護。新增command與商業操作同交易，錯誤回滾。普通request_key省略仍相容，但新版前端一律保存識別與完整POST（含原expected_version），結果不明不得重建內容。
+- receive的lines本來支持多品項；新版UI整批正常確認直接使用同一shipment、同request_key、同一交易，仍逐項驗checked／sellable／damaged／short、B庫存版本及來源唯一性。任一失敗全部回滾。
+- replenishment/context在已授權門市鎖內自動prepare_cycles，唯一鍵store＋baseline＋arrival及最新鎖定讀取提供冪等與併發保護。新增next_open_at／window_status；日常窗口不變。admin準備API仍相容。
+- 管理stores與policies修改只鎖目標門市；共用products及users維持全門市升冪锁（商品跨店與身份關联變動需要協調），再鎖身份及設定。BASE_UNIT_LOCKED／STORE_HAS_UNFINISHED_WORK為409，後者details.blockers含reason／url及store_id。不放寬庫存、版本或歷史快照。
+- /api/orders與/api/fulfillment/orders增number／status／from_date／to_date，台北日界轉UTC篩選，先權限再查詢，重複或非法條件400。分页大小保留20／100。
+- /api/admin/catalog可用kind／page／search按分類50筆及有限參照載入；無kind舊合約保留供舊客戶端。/api/admin/lookups以kind=products或stores及search取得最多50筆選項與has_more。
+- /api/order-drafts/{id}/archive及/rebuild使用POST expected_version、原owner／門市鎖；封存保留資料且删除未送出preview；rebuild選最新正式run，只帶有人工理由／特殊需求的資料、不帶manual_ack、確認或token；不再有效商品不加入新草稿。重複舊版本409，不會重複建立。新草稿仍須原preview／submit全規則。
+- 登入閒置期限真實時間30分鐘，清除session及CSRF快取後須重新登入；瀏覽器保存工作按actor／store隔離。業務時鐘、五分鐘確認及盤點版本仍按原規則。
+- 新migration鏈：884e7a53a8c8→a1410260001（round）→a1410260002（門市送單日期索引）→a1410260003（command）。不改已發布migration；回退以備份還原為準。
+
+履約HTTP明細另追加number／status（訂單最新總狀態），讓出貨／收貨後的選單標籤同步；DTO v1方法與欄位仍相容。

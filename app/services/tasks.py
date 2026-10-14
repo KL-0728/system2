@@ -44,7 +44,7 @@ def policy_setting(session, store_id, product_id, name, default):
     row = session.execute(db.select(PolicyVersion).where(
         PolicyVersion.store_id == store_id,
         PolicyVersion.product_id == product_id).order_by(
-        PolicyVersion.version.desc()).limit(1)).scalar_one_or_none()
+        PolicyVersion.version.desc()).limit(1).with_for_update(read=True)).scalar_one_or_none()
     if row is None:
         raise DomainError('POLICY_MISSING', '門市商品政策不存在', 409)
     value = row.parameters.get(name, default)
@@ -81,11 +81,39 @@ def list_tasks(session, store_id, role, *, order_id=None, include_completed=Fals
             'extra_event': extra_ids}
         rows = [r for r in rows if r.source_type in allowed and
             r.source_id.isdigit() and int(r.source_id) in allowed[r.source_type]]
+    return serialize_tasks(session, rows, role)
+
+
+def serialize_tasks(session, rows, role):
     now = business_now()
+    source_stores = {(r.source_type, r.source_id): r.store_id for r in rows}
+    destinations = {}
+    source_ids = {}
+    for row in rows:
+        if row.source_id.isdigit():
+            source_ids.setdefault(row.source_type, set()).add(int(row.source_id))
+    queries = {
+        'order_item': db.select(OrderItem.id, OrderItem.order_id),
+        'shipment_item': db.select(ShipmentItem.id, Shipment.order_id).join(Shipment),
+        'change': db.select(SupplyChangeRequest.id, OrderItem.order_id).join(OrderItem),
+        'variance': db.select(ReceiptVariance.id, Shipment.order_id).join(ReceiptItem).join(ShipmentItem).join(Shipment),
+        'extra_event': db.select(FulfillmentEvent.id, OrderItem.order_id).join(OrderItem),
+    }
+    models = {'order_item': OrderItem, 'shipment_item': ShipmentItem, 'change': SupplyChangeRequest,
+        'variance': ReceiptVariance, 'extra_event': FulfillmentEvent}
+    for kind, ids in source_ids.items():
+        if kind in queries:
+            for source_id, target_order in session.execute(queries[kind].where(models[kind].id.in_(ids))):
+                path = '/store/receiving' if role == 'manager' else '/headquarters/fulfillment'
+                target_store = source_stores[(kind, str(source_id))]
+                destinations[(kind, str(source_id))] = f'{path}?store_id={target_store}&order_id={target_order}#{kind}-{source_id}'
     return [dict(id=r.id, type=r.task_type, source=f'{r.source_type}:{r.source_id}',
+        round=r.round, store_id=r.store_id, url=destinations.get((r.source_type, r.source_id),
+            f'/store/receiving?store_id={r.store_id}'),
         task_type=r.task_type, source_type=r.source_type,
         source_id=r.source_id, due_at=aware(r.due_at).isoformat(),
         overdue=r.completed_at is None and aware(r.due_at) < now,
+        was_overdue=r.completed_at is not None and r.completed_at > r.due_at,
         completed_at=aware(r.completed_at).isoformat() if r.completed_at else None,
         result=r.result, details=r.result) for r in rows]
 
@@ -96,7 +124,8 @@ def complete_task(session, store_id, source_type, source_id, task_type,
         OperationalTask.store_id == store_id,
         OperationalTask.source_type == source_type,
         OperationalTask.source_id == source_id,
-        OperationalTask.task_type == task_type).with_for_update()).scalar_one_or_none()
+        OperationalTask.task_type == task_type,
+        OperationalTask.completed_at.is_(None)).with_for_update()).scalar_one_or_none()
     if row and row.completed_at is None:
         row.completed_at = utc_naive(business_now())
         row.completed_by = actor_id
@@ -111,25 +140,27 @@ def create_task(session, store_id, role, source_type, source_id, task_type,
         OperationalTask.store_id == store_id,
         OperationalTask.source_type == source_type,
         OperationalTask.source_id == source_id,
-        OperationalTask.task_type == task_type).with_for_update()).scalar_one_or_none()
-    if row:
+        OperationalTask.task_type == task_type).order_by(OperationalTask.round.desc())
+        .with_for_update()).scalars().first()
+    if row and row.completed_at is None:
         return row
+    next_round = row.round + 1 if row else 1
     policy_query = db.select(PolicyVersion).where(PolicyVersion.store_id == store_id)
     if product_id is not None:
         policy_query = policy_query.where(PolicyVersion.product_id == product_id)
     policy = session.execute(policy_query.order_by(
-        PolicyVersion.version.desc(), PolicyVersion.id.desc())).scalars().first()
+        PolicyVersion.version.desc(), PolicyVersion.id.desc()).with_for_update(read=True)).scalars().first()
     if policy is None:
         raise ValueError('門市政策版本不存在')
     row = OperationalTask(store_id=store_id, owner_role=role,
         source_type=source_type, source_id=source_id, task_type=task_type,
         policy_version_id=policy.id, due_at=utc_naive(due_at),
-        created_at=utc_naive(business_now()))
+        created_at=utc_naive(business_now()), round=next_round)
     session.add(row)
     return row
 
 
-def request_contact(session, store_id, actor_id, reason):
+def request_contact(session, store_id, actor_id, reason, request_key=None):
     actor = session.get(User, actor_id)
     if not actor or not actor.active or actor.role != 'manager' or \
             not any(s.id == store_id for s in actor.stores):
@@ -137,18 +168,31 @@ def request_contact(session, store_id, actor_id, reason):
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
         raise DomainError('INVALID_INPUT', '聯絡原因必填且不得超過500字', 400)
     store = _lock_store(session, store_id)
+    source_id = uuid4().hex
+    if request_key is not None:
+        if not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 100:
+            raise DomainError('INVALID_INPUT', '聯絡請求識別無效', 400)
+        from hashlib import sha256
+        source_id = sha256(f'{actor_id}:{request_key}'.encode()).hexdigest()
+        existing = session.execute(db.select(OperationalTask).where(OperationalTask.store_id == store_id,
+            OperationalTask.source_type == 'contact', OperationalTask.source_id == source_id)
+            .with_for_update()).scalars().first()
+        if existing:
+            if (existing.result or {}).get('reason') != reason.strip():
+                raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的聯絡原因不同', 409)
+            return existing
     policy = session.execute(db.select(PolicyVersion).where(
         PolicyVersion.store_id == store_id).order_by(
         PolicyVersion.version.desc())).scalars().first()
     minutes = int(policy.parameters.get('contact_minutes', 60)) if policy else 60
-    task = create_task(session, store_id, 'manager', 'contact', uuid4().hex,
+    task = create_task(session, store_id, 'manager', 'contact', source_id,
         'contact_headquarters', business_now() + timedelta(minutes=minutes))
     task.result = {'reason': reason.strip()}
     bump_store(store)
     return task
 
 
-def resolve_contact(session, task_id, actor_id, result):
+def resolve_contact(session, task_id, actor_id, result, request_key=None):
     actor = session.get(User, actor_id)
     task = session.get(OperationalTask, task_id)
     if not actor or not actor.active or actor.role != 'manager' or not task or \
@@ -160,11 +204,19 @@ def resolve_contact(session, task_id, actor_id, result):
     task = session.execute(db.select(OperationalTask).where(
         OperationalTask.id == task_id).execution_options(
         populate_existing=True).with_for_update()).scalar_one()
+    if request_key is not None:
+        if not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 100:
+            raise DomainError('INVALID_INPUT', '聯絡處理識別無效', 400)
+        previous = task.result or {}
+        if previous.get('resolution_key') == request_key:
+            if previous.get('outcome') != result.strip():
+                raise DomainError('IDEMPOTENCY_CONFLICT', '相同識別的聯絡處理結果不同', 409)
+            return task
     if task.task_type != 'contact_headquarters' or task.completed_at:
         raise DomainError('INVALID_STATE', '待辦已處理或類型不符', 409)
     task.completed_at = utc_naive(business_now())
     task.completed_by = actor_id
-    task.result = {**(task.result or {}), 'outcome': result.strip()}
+    task.result = {**(task.result or {}), 'outcome': result.strip(), 'resolution_key':request_key}
     task.version += 1
     bump_store(store)
     return task

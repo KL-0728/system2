@@ -46,7 +46,7 @@
       option.value = saved.id; $('saved-run').append(option);
     }
     modeControls.renderOptions(context.products);
-    if (!context.can_generate) say('目前不在21:00–22:00訂購時段，可查看歷次建議；請在本輪開放後重新計算。');
+    if (!context.can_generate) say('目前不在21:00–22:00訂購時段，可查看歷次建議；下一次開放：' + local(context.next_open_at) + '（台北）。');
     else if (!context.cycles.length) say('本輪尚無配送輪次，請聯絡管理者準備今日配送安排。', true);
   };
   const table = (headers, rows) => {
@@ -86,6 +86,12 @@
         const li = node('li', warning.message);
         li.dataset.warningCode = warning.code;
         li.dataset.warningLevel = warning.level;
+        if(warning.details?.dates?.length)li.append(node('p','缺少區間：'+warning.details.dates.join('、')));
+        if(warning.details?.baseline_missing)li.append(node('p','尚無有效盤點，請先完成對應區間銷售入帳，再提交21:00盤點。'));
+        if(['FORECAST_INSUFFICIENT','INVENTORY_GAP','NEGATIVE_BOOK'].includes(warning.code)) {
+          const repair=node('a',warning.code==='NEGATIVE_BOOK'?'前往對帳／盤點修正':'前往銷售／盤點資料修正');
+          repair.href=`/store/data?store_id=${storeId}`;li.append(repair);
+        }
         li.className = 'run-warning ' + warning.level; warnings.append(li);
       }
       card.append(warnings);

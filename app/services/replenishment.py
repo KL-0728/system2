@@ -84,9 +84,11 @@ def _sources(session, store, baseline, end, now, product_ids):
                 raise ValueError('missing source identity')
     except (ValueError, TypeError, AttributeError, DomainError) as exc:
         raise DomainError('PROVIDER_MISMATCH', '未結來源重複或不符合扣抵合約', 409) from exc
+    known_products = product_ids | set(session.execute(db.select(StoreProduct.product_id).where(
+        StoreProduct.store_id == store.id)).scalars())
     if ((value.store_id, value.store_version, value.baseline_at, value.protection_end, value.evaluated_at)
             != (store.id, store.calculation_version, baseline, end, now)
-            or any(s.product_id not in product_ids for s in value.sources)):
+            or any(s.product_id not in known_products for s in value.sources)):
         raise DomainError('PROVIDER_MISMATCH', '未結來源門市／版本／時間／商品不一致', 409)
     return tuple(sorted(value.sources, key=lambda s: (s.product_id, s.source_type, s.source_id)))
 

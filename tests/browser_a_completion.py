@@ -2,6 +2,7 @@
 from pathlib import Path
 from threading import Thread
 from datetime import timedelta
+import os
 import pytest
 from werkzeug.serving import make_server
 from app.extensions import db
@@ -33,7 +34,7 @@ def test_admin_management_in_edge(real_server,width):
     playwright=pytest.importorskip('playwright.sync_api')
     base,store_id,product_id=real_server
     with playwright.sync_playwright() as runner:
-        browser=runner.chromium.launch(channel='msedge',headless=True)
+        browser=runner.chromium.launch(channel=os.getenv('BROWSER_CHANNEL','msedge') or None,headless=True)
         page=browser.new_page(viewport={'width':width,'height':900})
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
         login(page,base,'admin');page.get_by_role('link',name='管理設定',exact=True).click()
@@ -64,7 +65,7 @@ def test_real_three_stage_order_and_receipt_in_edge(real_server,width):
     playwright=pytest.importorskip('playwright.sync_api')
     base,store_id,product_id=real_server
     with playwright.sync_playwright() as runner:
-        browser=runner.chromium.launch(channel='msedge',headless=True)
+        browser=runner.chromium.launch(channel=os.getenv('BROWSER_CHANNEL','msedge') or None,headless=True)
         page=browser.new_page(viewport={'width':width,'height':900})
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
         login(page,base,'manager1')

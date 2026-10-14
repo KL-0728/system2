@@ -1,5 +1,11 @@
 # D 模組交接
 
+## 2026-10-14 A全系統整合變更
+
+A本次整合分開商業承諾與物流ETA；晚於承諾出貨必填delay_reason，保留承諾，物流列待查風險。task唯一鍵加入round，重確認ETA另建收貨期限；狀態HTTP新增可選request_key，以同交易command保存結果。前端保留完整原請求並支持批次正常收貨；請重測再次待查與回應遺失，勿改回舊唯一鍵。
+
+先依[README](../../README.md)備份、升級到a1410260003、重啟Flask；不得重設既有DB。共用合約相容增量見[contracts](../contracts.md)，實際測試／手動步驟與發布SHA見[A修正報告](../system-hardening-2026-10-14.md)。原模組PR與人類驗收紀錄保留，本段不代填人類通過，也不改B／C／D分支。
+
 ## 2026-10-13：A同步合併結果
 
 D已由PR #6合併，来源head `dd39baf`、main合併 `b45cccb`；下方未開PR／403是D當時的歷史紀錄。A在`chore/a-project-completion`補上真實C送單→D出貨／收貨→B庫存、失敗回滾與MySQL兩連線證據，並修正門市鎖後讀取舊快照問題。沒有改寫D分支；補修是A本機未提交成果，請D複核。測試结果／人工步驟見[a-completion-report.md](../a-completion-report.md)及[a-completion-testing.md](../a-completion-testing.md)。

@@ -237,6 +237,54 @@ class OrderingService:
     def get_draft(self, actor, draft_id):
         return self.draft_detail(self._owned_draft(draft_id, actor), actor)
 
+    def archive_draft(self, actor, draft_id, expected_version):
+        draft = self._owned_draft(draft_id, actor)
+        lock_store(draft.store_id)
+        draft = self._owned_draft(draft_id, actor, lock=True)
+        if draft.status == 'ARCHIVED':
+            return draft
+        if draft.status != 'DRAFT' or type(expected_version) is not int or draft.version != expected_version:
+            raise DomainError('VERSION_CONFLICT', '草稿已送出或更新，請重新核對', 409)
+        draft.status = 'ARCHIVED'
+        draft.version += 1
+        draft.updated_at = utc_naive(business_now())
+        db.session.execute(db.delete(OrderConfirmation).where(OrderConfirmation.draft_id == draft.id,
+            OrderConfirmation.order_id.is_(None)))
+        record_event(actor.id, draft.store_id, 'order_draft.archived', f'order-draft:{draft.id}', None,
+            {'version': draft.version})
+        return draft
+
+    def rebuild_draft(self, actor, draft_id, expected_version):
+        original = self._owned_draft(draft_id, actor)
+        lock_store(original.store_id)
+        original = self._owned_draft(draft_id, actor, lock=True)
+        if original.status not in ('DRAFT', 'ARCHIVED') or type(expected_version) is not int or original.version != expected_version:
+            raise DomainError('VERSION_CONFLICT', '原草稿已更新或送出，請重新核對', 409)
+        from app.services.run_sources import latest_run
+        run = latest_run(original.store_id)
+        if not run or run.id == original.run_id:
+            raise DomainError('NEW_RUN_REQUIRED', '請先重新計算本輪建議，再帶回人工調整', 409)
+        detail = self.create_draft(actor, store_id=original.store_id, run_id=run.id, cycle_id=run.cycle_id)
+        new = self._owned_draft(detail['id'], actor, lock=True)
+        new_rows = {r.product_id: r for r in self._draft_items(new.id, lock=True)}
+        removed = []
+        for old in self._draft_items(original.id, lock=True):
+            target = new_rows.get(old.product_id)
+            if not target:
+                removed.append(old.product_id)
+            elif old.reason_code or old.special_need:
+                target.final_qty, target.reason_code, target.reason = old.final_qty, old.reason_code, old.reason
+                target.special_need = old.special_need
+                target.manual_forecast_acknowledged = False
+        if original.status == 'DRAFT':
+            self.archive_draft(actor, original.id, original.version)
+        else:
+            original.version += 1
+        record_event(actor.id, new.store_id, 'order_draft.rebuilt', f'order-draft:{new.id}',
+            {'source_draft': original.id}, {'removed_products': removed, 'confirmations_reset': True})
+        db.session.flush()
+        return {**self.draft_detail(new, actor), 'removed_products': removed}
+
     def update_draft(self, actor, draft_id, payload):
         payload = _require_dict(payload)
         draft = self._owned_draft(draft_id, actor)

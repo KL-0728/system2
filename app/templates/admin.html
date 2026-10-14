@@ -7,6 +7,8 @@
 <nav class="admin-tabs" aria-label="管理分類">
 {% for key,label in [('products','商品'),('stores','門市'),('users','帳號'),('policies','門市商品政策')] %}<button type="button" data-kind="{{ key }}">{{ label }}</button>{% endfor %}
 </nav>
+<form id="catalog-search"><label>搜尋名稱／代碼／帳號（政策填門市編號）<input type="search" name="search" maxlength="120"></label><button type="submit">搜尋設定</button></form>
+<nav class="pagination" aria-label="管理資料分頁"><button id="catalog-prev" type="button">上一頁</button><span id="catalog-page"></span><button id="catalog-next" type="button">下一頁</button></nav>
 <section class="admin-layout"><div><h2 id="list-title">商品</h2><button id="new-record" type="button">新增</button><div id="admin-list"></div></div>
 <form id="admin-form"><h2 id="edit-title">新增商品</h2><div id="admin-fields"></div><button type="submit">儲存設定</button></form></section>
 <details class="admin-secondary"><summary>配送輪次管理</summary><h2>準備本輪配送</h2><form id="cycles-form"><label>門市<select name="store_id"></select></label><button type="submit">準備今日配送輪次</button></form><p>保留既有輪次，依每日到貨安排與商品交期新增本輪配送。新增門市商品後，須由店長先完成日常銷售入帳與有效盤點，才能送單。</p></details>

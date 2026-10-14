@@ -76,6 +76,8 @@ def orders():
     query = db.select(Order).where(Order.store_id == store_id)
     if current_app.config['MODULE_DEV'] != 'D':
         query = query.where(Order.fixture_only.is_(False))
+    from app.services.order_filters import filtered
+    query = filtered(query)
     rows = db.session.execute(query.order_by(Order.id.desc()).offset((page-1)*100).limit(101)).scalars().all()
     return jsonify(orders=[dict(id=o.id, number=o.number, status=o.status,
         submitted_at=aware(o.submitted_at).isoformat(), store_id=o.store_id,
@@ -102,6 +104,8 @@ def order_detail(order_id):
             db.select(ShipmentItem).where(ShipmentItem.shipment_id == s.id)).scalars()])
         for s in shipments]
     summary['fixture_only'] = order.fixture_only
+    summary['number'] = order.number
+    summary['status'] = order.status
     changes = db.session.execute(db.select(SupplyChangeRequest).join(OrderItem,
         SupplyChangeRequest.order_item_id == OrderItem.id)
         .where(OrderItem.order_id == order_id)
@@ -142,7 +146,7 @@ def tasks():
 def contact(store_id):
     body = _body()
     with transaction() as session:
-        task = request_contact(session, store_id, g.user.id, body.get('reason'))
+        task = request_contact(session, store_id, g.user.id, body.get('reason'), body.get('request_key'))
         session.flush()
         task_id = task.id
     return jsonify(id=task_id, status='ok')
@@ -153,7 +157,7 @@ def contact(store_id):
 def contact_result(task_id):
     body = _body()
     with transaction() as session:
-        task = resolve_contact(session, task_id, g.user.id, body.get('result'))
+        task = resolve_contact(session, task_id, g.user.id, body.get('result'), body.get('request_key'))
     return jsonify(id=task.id, status='ok')
 
 
@@ -162,16 +166,32 @@ def _mutate(method, **ids):
     parameters = signature(method).parameters
     allowed = set(parameters) - {'actor_id', 'session'} - set(ids)
     allowed.add('expected_version')
+    allowed.add('request_key')
     required = {name for name, p in parameters.items()
         if p.default is Parameter.empty} - {'actor_id', 'session'} - set(ids)
     if set(body) - allowed or required - set(body):
         raise DomainError('INVALID_INPUT', '履約欄位缺漏或包含不支援的欄位', 422)
     with transaction() as session:
         from app.services.fulfillment_requests import check_precondition
-        check_precondition(g.user, method.__name__, ids, body, session)
+        command_hash = None
+        command_key = body.get('request_key')
+        if command_key is not None and 'request_key' not in parameters:
+            from app.services.fulfillment import _hash, _text
+            command_key = _text(command_key, '請求識別', 100)
+            command_hash = _hash({'action':method.__name__, 'ids':ids,
+                'body':{k:v for k,v in body.items() if k not in ('expected_version', 'request_key')}})
+        order, saved = check_precondition(g.user, method.__name__, ids, body, session, command_hash)
+        if saved:
+            return jsonify(id=saved.result_id, status='ok')
+        if command_hash:
+            body.pop('request_key')
         result = method(actor_id=g.user.id, session=session, **ids, **body)
         session.flush()
         result_id = result.id
+        if command_hash:
+            from app.models import FulfillmentCommand
+            session.add(FulfillmentCommand(order_id=order.id, actor_id=g.user.id, request_key=command_key,
+                payload_hash=command_hash, result_id=result_id, action=method.__name__))
     return jsonify(id=result_id, status='ok')
 
 

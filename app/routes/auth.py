@@ -46,6 +46,8 @@ def login():
     session.clear()
     session['user_id'] = user.id
     session['credential_token'] = user.session_token()
+    from time import time
+    session['last_activity'] = time()
     g.pop('csrf_token', None)
     if request.is_json:
         return jsonify(user={'id': user.id, 'role': user.role}, csrf_token=generate_csrf())

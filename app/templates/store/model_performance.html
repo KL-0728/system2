@@ -1,0 +1,8 @@
+{% extends 'base.html' %}{% block content %}
+<h1>{{ store.name }}：預測與實際銷量</h1>
+<p>本作業使用合成示範／測試資料，不能宣稱實際企業效益。七日平均模型不變；以每品項每天最後一次快照預測下一完整營業區間，避免重複計算與事後資料洩漏。</p>
+<p>本頁有效樣本 {{ samples }}；平均絕對誤差（MAE）{{ mae if mae is not none else '尚無可比較資料' }} 件／日。缺貨及非正常營業區間保留但不納入分數。</p>
+{% for row in rows %}<article class="panel"><h2>{{ row.product }} · {{ row.date }}</h2><p>當時日需求 {{ row.forecast if row.forecast is not none else '無法計算' }} 件（{{ {'model':'七日平均','manual':'人工預測','direct':'特殊直接訂購','unavailable':'資料不足'}.get(row.mode,row.mode) }}）；實際銷量 {{ row.actual if row.actual is not none else '待資料' }} 件；誤差 {{ row.error if row.error is not none else '未評分' }}。{{ row.quality }}</p>
+{% for change in row.adjustments %}<p>草稿 #{{ change.draft }}（{{ {'DRAFT':'未送出','SUBMITTED':'已送出','ARCHIVED':'已封存'}.get(change.status,change.status) }}）人工訂量 {{ change.qty }} 件；理由：{{ change.reason }}。訂量與日需求為不同指標。</p>{% endfor %}</article>{% else %}<p>先產生正式計算快照，後續匯入下一區間完整銷售再比較。</p>{% endfor %}
+<nav class="pagination" aria-label="模型比較分頁">{% if page>1 %}<a href="?store_id={{ store.id }}&page={{ page-1 }}">上一頁</a>{% endif %}<span>第 {{ page }} 頁</span>{% if has_next %}<a href="?store_id={{ store.id }}&page={{ page+1 }}">下一頁</a>{% endif %}</nav>
+{% endblock %}

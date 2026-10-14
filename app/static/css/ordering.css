@@ -130,3 +130,4 @@ summary { cursor: pointer; color: #6250A5; }
   .panel { padding: .8rem; }
   .definition-grid { grid-template-columns: minmax(70px, .6fr) minmax(0, 1fr); }
 }
+#draft-tools button{max-width:100%;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box}

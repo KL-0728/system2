@@ -42,11 +42,14 @@ def ordering_page():
     store = _manager_store(query_integer('store_id', '門市'))
     draft_id = query_integer('draft_id', '草稿')
     resume = ordering_service.get_draft(g.user, draft_id) if draft_id else None
-    if resume and (resume['store_id'] != store.id or resume['status'] != 'DRAFT'):
+    if resume and (resume['store_id'] != store.id or resume['status'] not in ('DRAFT','ARCHIVED')):
         raise DomainError('NOT_FOUND', '草稿不存在或已送出', 404)
     source_message = resume.get('source_message') if resume else None
     run = (db.session.get(ReplenishmentRun, resume['run_id']) if resume['source_available'] else None) \
         if resume else latest_run(store.id)
+    if resume and resume['status'] == 'ARCHIVED':
+        run = None
+        source_message = '此草稿已封存，原內容保留；重新計算後可帶回人工調整至新草稿。'
     run_data = None
     if run:
         run_data = dto_dict(get_provider('runs').get_run(run_id=run.id, store_id=store.id,
@@ -133,6 +136,24 @@ def get_draft(draft_id):
     return jsonify(ordering_service.get_draft(g.user, draft_id))
 
 
+@bp.post('/api/order-drafts/<int:draft_id>/archive')
+@require_role('manager', 'admin')
+def archive_draft(draft_id):
+    body = _payload()
+    with transaction():
+        draft = ordering_service.archive_draft(g.user, draft_id, body.get('expected_version'))
+    return jsonify(id=draft.id, status=draft.status)
+
+
+@bp.post('/api/order-drafts/<int:draft_id>/rebuild')
+@require_role('manager', 'admin')
+def rebuild_draft(draft_id):
+    body = _payload()
+    with transaction():
+        result = ordering_service.rebuild_draft(g.user, draft_id, body.get('expected_version'))
+    return jsonify(result), 201
+
+
 @bp.patch('/api/order-drafts/<int:draft_id>')
 @require_role('manager', 'admin')
 def update_draft(draft_id):
@@ -172,10 +193,10 @@ def list_orders():
     store = _manager_store(query_integer('store_id', '門市'))
     page = query_integer('page', '頁碼', default=1, maximum=1_000_000)
     page_size = 20
-    total = db.session.execute(db.select(db.func.count(Order.id)).where(
-        Order.store_id == store.id, Order.fixture_only.is_(False))).scalar_one()
-    rows = db.session.execute(db.select(Order).where(Order.store_id == store.id,
-        Order.fixture_only.is_(False)).order_by(Order.submitted_at.desc(), Order.id.desc())
+    from app.services.order_filters import filtered
+    query = filtered(db.select(Order).where(Order.store_id == store.id, Order.fixture_only.is_(False)))
+    total = db.session.execute(db.select(db.func.count()).select_from(query.subquery())).scalar_one()
+    rows = db.session.execute(query.order_by(Order.submitted_at.desc(), Order.id.desc())
         .offset((page - 1) * page_size).limit(page_size)).scalars().all()
     return jsonify(orders=[{'id': row.id, 'number': row.number, 'status': row.status,
         'version': row.version, 'submitted_at': row.submitted_at} for row in rows],

@@ -7,6 +7,12 @@
   <div><p class="eyebrow">{{ store.code }}</p><h1>每日補貨工作台</h1></div>
   <p>門市：{{ store.name }}。依序完成「調整數量 → 核對提醒 → 確認送出」。</p>
 </header>
+{% if resume_draft %}<section class="panel" id="draft-tools" data-id="{{ resume_draft.id }}" data-version="{{ resume_draft.version }}" data-store="{{ store.id }}" data-actor="{{ actor_id }}">
+<p>草稿 #{{ resume_draft.id }}。舊確認與風險不能沿用；先儲存人工調整，再重新計算本輪建議，可帶回數量、理由及特殊需求供核對。</p>
+<a href="{{ url_for('inventory.replenishment_page',store_id=store.id) }}">重新計算建議</a>
+<button type="button" data-draft-action="rebuild">帶回人工調整至新草稿</button><button type="button" data-draft-action="archive">封存草稿</button><p role="status" id="draft-tools-status"></p></section>
+<details class="panel"><summary>原草稿保存內容（尚未入庫）</summary>{% for item in resume_draft['items'] %}<p>商品編號{{ item.product_id }}：{{ item.final_qty }}件；{{ item.reason or item.reason_code or '依當時建議' }}{% if item.special_need %}；需求日期{{ item.special_need.need_date }}，安排{{ item.special_need.arrangement }}{% endif %}</p>{% endfor %}</details>
+<script src="{{ asset_url('js/draft-tools.js') }}" defer></script>{% endif %}
 
 {% if source_message %}
 <section class="panel error-box" role="alert">

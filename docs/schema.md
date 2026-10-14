@@ -792,3 +792,13 @@ Constraints:
 - ForeignKeyConstraint fk_replacement_authorizations_variance_id_receipt_variances: variance_id
 - PrimaryKeyConstraint pk_replacement_authorizations: id
 - UniqueConstraint uq_replacement_authorizations_variance_id: variance_id, request_key
+
+## 2026-10-14 相容結構增量
+
+原表與已發布migration保留，新head `a1410260003`。
+
+- operational_tasks.round INTEGER NOT NULL DEFAULT 1；唯一store_id／source_type／source_id／task_type／round。既有行回填1，due／完成結果不變。
+- orders增加索引ix_orders_store_submitted_id(store_id,submitted_at,id)，支持門市日期清單分頁。
+- fulfillment_commands：id INTEGER PK；order_id FK orders.id；actor_id FK users.id；request_key VARCHAR(100)；payload_hash VARCHAR(64)；result_id INTEGER；action VARCHAR(40)，皆NOT NULL。唯一order_id／actor_id／request_key。成功後追加保存，不代替native出貨／收貨／補送來源唯一鍵。
+
+空資料庫與還原的舊demo副本已驗完整鏈升級及db check；不以改寫基準migration處理差異。

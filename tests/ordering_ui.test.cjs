@@ -25,7 +25,7 @@ function page(initialQuantity) {
     'exception-filter', 'order-ack', 'stage-workbench', 'stage-preview', 'back-button',
     'submit-button', 'submit-error', 'exclude-dialog', 'exclude-description', 'exclude-note',
     'exclude-cancel', 'exclude-confirm']) ids.set(id, element());
-  ids.get('ordering-bootstrap').textContent = JSON.stringify({store_id: 1, run: {run_id: 1, cycle_id: 1}});
+  ids.get('ordering-bootstrap').textContent = JSON.stringify({store_id: 1, run: {run_id: 1, cycle_id: 1, items: [{product_id: 1, pack_size: 6}]}});
   const fields = Object.fromEntries(['final_qty', 'reason_code', 'reason', 'need_date',
     'need_qty', 'arrangement', 'manual_ack'].map(name => [name, element()]));
   fields.final_qty.value = initialQuantity;

@@ -80,6 +80,9 @@
   function showError(target, error) {
     if (!target) return;
     target.textContent = error.message;
+    if(bootstrap && ['VERSION_CONFLICT','DRAFT_SOURCE_UNAVAILABLE','STALE_RUN','INVENTORY_GAP','NEGATIVE_BOOK','ORDER_BLOCKED'].includes(error.code)) {
+      const repair=document.createElement('a');repair.href=`/store/replenishment?store_id=${bootstrap.store_id}`;repair.textContent=' 重新核對資料並計算建議';target.append(repair);
+    }
     target.hidden = false;
   }
 
@@ -130,7 +133,7 @@
     const excluded = row.querySelector('[data-field="final_qty"]').value.trim() === '0';
     row.classList.toggle('is-excluded', excluded);
     const state = row.querySelector('[data-item-state]');
-    if (state) state.textContent = excluded ? '本次不訂 · 0件' : '';
+    if (state) {const quantity=Number(row.querySelector('[data-field="final_qty"]').value);const pack=bootstrap.run.items.find(i=>i.product_id===Number(row.dataset.productId))?.pack_size||1;state.textContent=excluded?'本次不訂 · 0件':`${quantity} 件 = ${Math.floor(quantity/pack)} 箱${quantity%pack?' + '+quantity%pack+' 件':''}`;}
     const adjustment = row.querySelector('.adjustment-details');
     const modified = Number(row.querySelector('[data-field="final_qty"]').value) !== Number(row.dataset.suggested);
     if (adjustment && (modified || row.querySelector('[data-field="reason_code"]')?.value
